@@ -1,0 +1,10 @@
+flask>=3.0
+pillow>=10.0
+torch>=2.3
+torchvision
+accelerate>=1.0
+transformers==5.18.0
+openpyxl>=3.1
+
+# Opcional: abrir fotos HEIC de iPhone
+# pillow-heif

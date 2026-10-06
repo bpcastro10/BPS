@@ -1,0 +1,49 @@
+{
+  "descripcion": "Reglas para el informe de cheques. El Excel incluye solo los archivos que incumplen alguna validacion activa.",
+  "fecha": {
+    "meses_maximos": 13,
+    "regla": "Desde la fecha del cheque no puede haber pasado un tiempo mayor o igual a 13 meses comparado con la fecha actual.",
+    "formatos": [
+      "AAAA/MM/DD",
+      "AAAA-MM-DD",
+      "AAAA, MM, DD",
+      "AAAA, Mes, DD",
+      "AAAA, Mes abreviado, DD",
+      "AAAA, Mes romano, DD",
+      "DD de Mes de AAAA",
+      "DD de Mes del AAAA",
+      "DD de Mes abreviado. De AAAA",
+      "DD de Mes abreviado. del AAAA",
+      "DD de Mes abreviado. de AAAA",
+      "DD de Mes romano de AAAA",
+      "DD de Mes abreviado. AAAA",
+      "Mes DD, AAAA",
+      "DD de Mes/ AAAA",
+      "Mes abreviado. DD/AAAA",
+      "AAAA Mes DD",
+      "DD Mes AAAA"
+    ]
+  },
+  "validaciones": {
+    "firma": {
+      "activa": true,
+      "descripcion": "El cheque debe tener firma."
+    },
+    "beneficiario": {
+      "activa": true,
+      "descripcion": "Debe leerse el beneficiario (a la orden de)."
+    },
+    "coincide_valor": {
+      "activa": true,
+      "descripcion": "El valor en numeros debe coincidir con el valor en texto."
+    },
+    "fecha_correcta": {
+      "activa": true,
+      "descripcion": "La fecha debe reconocerse en un formato permitido y no puede tener 13 meses o mas."
+    },
+    "endoso": {
+      "activa": true,
+      "descripcion": "El cheque debe tener endoso. Desactiva esta regla si las imagenes son solo el frente."
+    }
+  }
+}

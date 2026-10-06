@@ -1,0 +1,28 @@
+LECTOR DE CHEQUES
+=================
+
+La guia completa esta en README.md.
+Aqui va el uso de todos los dias.
+
+1. La carpeta "glm_ocr_merged" debe estar junto a este archivo,
+   con config.json y model.safetensors.
+   Si el modelo se llama model-001.safetensors, renombralo.
+
+2. Doble clic en iniciar.bat.
+   La primera vez instala las librerias (varios minutos, hace falta internet).
+   Despues solo carga el modelo y abre http://127.0.0.1:5000
+   Para cerrar el programa, cierra la ventana negra.
+
+3. Copia las imagenes de los cheques en la carpeta "entrada".
+
+4. En la pagina pulsa "Leer carpeta y generar informe".
+   El Excel queda en la carpeta "informes".
+   Solo incluye los cheques con alguna observacion (una columna en NO).
+
+5. Las reglas estan en reglas.json.
+   La fecha no puede tener 13 meses o mas respecto a hoy.
+   Si las fotos son solo el frente, pon la validacion "endoso" en false.
+
+Si falta una libreria, ejecuta reparar.bat y luego iniciar.bat.
+Python 3.10 o superior. Con GPU NVIDIA, el instalador deja PyTorch para CPU;
+la version CUDA se instala dentro de .venv desde pytorch.org.

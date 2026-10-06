@@ -1,0 +1,2 @@
+Copia en esta carpeta las fotos o escaneos de los cheques (PNG, JPG, WEBP, BMP, TIFF o GIF).
+Luego, en el programa, pulsa "Leer carpeta y generar informe".

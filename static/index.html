@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lector de cheques</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Lector de cheques</h1>
+      <p class="lede">Coloca los cheques en la carpeta entrada. El programa los lee, los contrasta con las reglas y genera un Excel solo con los que tienen observaciones.</p>
+    </div>
+    <p id="status" class="status" data-state="loading">
+      <span id="status-text">Conectando con el modelo…</span>
+    </p>
+  </header>
+
+  <main class="workbench">
+    <section id="lote" class="panel lote" aria-label="Lectura por carpeta">
+      <div class="lote-head">
+        <div>
+          <h2 class="section-title">Lectura de la carpeta</h2>
+          <p class="lote-text">Copia las imágenes en la carpeta <strong>entrada</strong>, junto a este programa. Al terminar, el Excel queda en la carpeta <strong>informes</strong> y solo incluye los cheques con alguna observación.</p>
+          <p id="lote-carpeta" class="note"></p>
+        </div>
+      </div>
+
+      <p id="lote-cuenta" class="note">Buscando archivos…</p>
+      <ul id="lote-archivos" class="archivos"></ul>
+
+      <div class="actions">
+        <button id="lote-run" class="btn btn-primary" type="button">Leer carpeta y generar informe</button>
+        <button id="lote-refresh" class="btn btn-ghost" type="button">Actualizar lista</button>
+        <a id="lote-download" class="btn btn-ghost" hidden>Descargar Excel</a>
+      </div>
+
+      <p id="lote-progress" class="note" hidden></p>
+      <div id="lote-error" class="error" hidden>
+        <p id="lote-error-text"></p>
+      </div>
+      <div id="lote-resumen" class="resumen" hidden></div>
+      <div id="lote-tabla-wrap" class="tabla-wrap" hidden>
+        <table id="lote-tabla" class="tabla">
+          <thead>
+            <tr>
+              <th>Nombre_archivo</th>
+              <th>Cuenta_No</th>
+              <th>Cheque_No</th>
+              <th>A_la_orden_de</th>
+              <th>Valor_numero</th>
+              <th>Valor_texto</th>
+              <th>Cliente</th>
+              <th>Fecha</th>
+              <th>Endoso</th>
+              <th>Firma</th>
+              <th>Beneficiario</th>
+              <th>Coincide_valor</th>
+              <th>Fecha_correcta</th>
+              <th>Endoso</th>
+            </tr>
+          </thead>
+          <tbody id="lote-cuerpo"></tbody>
+        </table>
+      </div>
+
+      <details id="lote-reglas" class="reglas">
+        <summary>Reglas aplicadas</summary>
+        <p id="lote-regla-fecha" class="note"></p>
+        <ul id="lote-formatos" class="formatos"></ul>
+      </details>
+    </section>
+
+    <section id="source" class="panel source" aria-label="Imagen del cheque">
+      <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Elegir una imagen">
+        <svg class="dz-icon" viewBox="0 0 120 64" aria-hidden="true" focusable="false">
+          <rect x="2" y="2" width="116" height="60" rx="6" fill="none" stroke="currentColor" stroke-width="2"/>
+          <line x1="12" y1="16" x2="46" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="84" y1="16" x2="108" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="12" y1="30" x2="108" y2="30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <line x1="12" y1="42" x2="64" y2="42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M72 52c6-14 10-14 12-4s6 6 10-4 8 2 14-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="dz-main">Arrastra una imagen aquí, pégala o haz clic para elegirla</p>
+        <p class="dz-hint">PNG, JPG, WEBP, BMP, TIFF o GIF, hasta 25 MB</p>
+      </div>
+      <input id="file-input" type="file" accept="image/*" hidden>
+
+      <figure id="viewer" class="viewer" hidden>
+        <div class="stage">
+          <img id="preview" alt="Imagen subida">
+          <div id="overlay" class="overlay" aria-hidden="true"></div>
+        </div>
+        <figcaption id="file-name" class="file-name"></figcaption>
+        <p id="preview-note" class="note" hidden>Tu navegador no puede mostrar este formato, pero se enviará igualmente.</p>
+        <p id="overlay-note" class="note" hidden>Los recuadros azules marcan dónde detectó firmas el modelo.</p>
+      </figure>
+
+      <div class="actions">
+        <button id="run" class="btn btn-primary" type="button" disabled>Leer imagen</button>
+        <button id="reset" class="btn btn-ghost" type="button" hidden>Cambiar imagen</button>
+      </div>
+    </section>
+
+    <section class="panel result" aria-label="Resultado" aria-live="polite">
+      <div id="empty" class="state">
+        <p id="empty-text">Sube la imagen de un cheque para ver los datos extraídos y la confianza de cada uno.</p>
+      </div>
+
+      <div id="loading" class="state" role="status" hidden>
+        <p>Leyendo la imagen… <span id="loading-time" aria-hidden="true"></span></p>
+        <div class="progress" aria-hidden="true"></div>
+        <p class="note">En computadores sin GPU puede tardar un buen rato.</p>
+      </div>
+
+      <div id="error" class="error" role="alert" hidden>
+        <p class="error-title">No se pudo leer la imagen</p>
+        <p id="error-text"></p>
+      </div>
+
+      <div id="output" hidden>
+        <div id="overall" class="overall">
+          <p class="overall-label">Confianza global</p>
+          <div class="overall-figure">
+            <span id="overall-number" class="overall-number">--</span>
+            <span id="overall-badge" class="badge"></span>
+          </div>
+          <div class="meter" id="overall-meter-track"><span id="overall-meter"></span></div>
+          <p id="overall-note" class="overall-note"></p>
+          <p class="fine">Es la probabilidad media que el modelo asignó a lo que escribió. No garantiza que el dato sea correcto.</p>
+        </div>
+
+        <div id="review" class="review" hidden></div>
+
+        <h2 class="section-title">Datos leídos</h2>
+        <p class="legend">Las marcas de cada barra señalan el 70 % y el 90 %.</p>
+        <ul id="fields" class="fields"></ul>
+
+        <div class="output-actions">
+          <button id="copy" class="btn btn-ghost" type="button">Copiar resultado</button>
+          <span id="timing" class="note"></span>
+        </div>
+
+        <details id="details">
+          <summary>Respuesta original del modelo</summary>
+          <pre id="raw"></pre>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
