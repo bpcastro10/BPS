@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analizador de Cheques</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1>Analizador de Cheques</h1>
+      <p class="subtitulo">OCR local · Carpeta: <span id="ruta-carpeta">-</span></p>
+    </div>
+    <div id="estado" class="estado">Conectando...</div>
+  </header>
+
+  <section class="resumen">
+    <div class="tarjeta"><span>Cheques analizados</span><strong id="total-cheques">0</strong></div>
+    <div class="tarjeta"><span>Montos verificados</span><strong id="montos-ok">0</strong></div>
+    <div class="tarjeta"><span>Requieren revisión</span><strong id="requieren-revision">0</strong></div>
+    <div class="tarjeta"><span>Confianza promedio</span><strong id="confianza-promedio">0%</strong></div>
+  </section>
+
+  <section class="barra">
+    <input type="search" id="filtro" placeholder="Buscar por banco, beneficiario, número...">
+    <label class="boton secundario">
+      Subir cheques
+      <input type="file" id="subir" multiple accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp,.pdf" hidden>
+    </label>
+    <button class="boton secundario" id="btn-procesar">Revisar carpeta</button>
+    <button class="boton peligro" id="btn-reiniciar">Reanalizar todo</button>
+    <a class="boton" id="btn-excel" href="/api/v1/cheques/excel">Descargar Excel</a>
+  </section>
+
+  <main class="contenido">
+    <div class="tabla-contenedor">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th><th>Archivo</th><th>Banco</th><th>N° Cheque</th><th>Cuenta</th>
+            <th>Fecha</th><th>Beneficiario</th><th class="derecha">Monto</th>
+            <th>Monto en letras</th><th>Validación</th><th>Confianza</th><th>Revisión</th>
+          </tr>
+        </thead>
+        <tbody id="cuerpo-tabla">
+          <tr><td colspan="12" class="vacio">Coloque imágenes o PDF de cheques en la carpeta para analizarlos.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <aside id="detalle" class="detalle oculto">
+      <div class="detalle-cabecera">
+        <h2 id="detalle-titulo">Detalle</h2>
+        <button class="cerrar" id="btn-cerrar" title="Cerrar">&times;</button>
+      </div>
+      <img id="detalle-imagen" alt="Cheque analizado">
+      <ul id="detalle-avisos" class="avisos"></ul>
+      <dl id="detalle-campos" class="campos"></dl>
+      <details>
+        <summary>Texto OCR completo</summary>
+        <pre id="detalle-texto"></pre>
+      </details>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

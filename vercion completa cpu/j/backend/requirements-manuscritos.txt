@@ -1,0 +1,3 @@
+# Opcional: mejora la lectura de texto manuscrito con TrOCR (modelo local, ~1.3 GB la primera vez)
+torch>=2.1
+transformers>=4.40
