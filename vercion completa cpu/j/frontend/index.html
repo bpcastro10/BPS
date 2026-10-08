@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Análisis de Cheques</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">✓</div>
+      <div>
+        <h1>Análisis de Cheques</h1>
+        <p class="subtitle">Extracción local de datos impresos y manuscritos</p>
+      </div>
+    </div>
+    <div class="engine-status" id="engineStatus">
+      <span class="dot"></span>
+      <span id="engineText">Conectando…</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="folder-bar">
+      <div>
+        <span class="label">Carpeta vigilada</span>
+        <code id="inputDir">—</code>
+      </div>
+      <div class="folder-hint">Copie cheques (JPG, PNG, TIFF, PDF) en esta carpeta: solo los archivos nuevos se analizan y se agregan al reporte automáticamente.</div>
+    </section>
+
+    <section class="stats">
+      <article class="stat"><span class="stat-label">Cheques analizados</span><strong id="statTotal">0</strong></article>
+      <article class="stat ok"><span class="stat-label">Completos</span><strong id="statOk">0</strong></article>
+      <article class="stat warn"><span class="stat-label">Por revisar</span><strong id="statReview">0</strong></article>
+      <article class="stat err"><span class="stat-label">Con error</span><strong id="statError">0</strong></article>
+    </section>
+
+    <section class="toolbar">
+      <input type="search" id="search" placeholder="Buscar beneficiario, banco, N° de cheque o archivo…">
+      <select id="statusFilter" title="Filtrar por estado">
+        <option value="">Todos los estados</option>
+        <option value="COMPLETO">Completos</option>
+        <option value="REVISAR">Por revisar</option>
+        <option value="ERROR">Con error</option>
+      </select>
+      <select id="sortBy" title="Ordenar por">
+        <option value="processedAt:desc">Más recientes primero</option>
+        <option value="processedAt:asc">Más antiguos primero</option>
+        <option value="date:desc">Fecha del cheque ↓</option>
+        <option value="amount:desc">Monto mayor</option>
+        <option value="amount:asc">Monto menor</option>
+        <option value="payee:asc">Beneficiario A-Z</option>
+        <option value="confidence:asc">Menor confianza</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn" id="btnScan" title="Buscar archivos nuevos ahora">⟳ Escanear carpeta</button>
+      <button class="btn primary" id="btnExcel" title="Descargar los cheques del filtro actual">⬇ Descargar Excel</button>
+    </section>
+
+    <section class="report">
+      <div class="report-header">
+        <h2>Reporte de cheques analizados</h2>
+        <span class="muted" id="resultInfo"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="checksTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cheque</th>
+              <th>Banco</th>
+              <th>N° Cheque</th>
+              <th>Fecha</th>
+              <th>Ciudad</th>
+              <th>Beneficiario</th>
+              <th class="num">Monto</th>
+              <th>Monto en letras</th>
+              <th>Cuenta</th>
+              <th>Firma</th>
+              <th>Confianza</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="checksBody"></tbody>
+        </table>
+        <div class="empty" id="emptyState">
+          <div class="empty-icon">🧾</div>
+          <p>Aún no hay cheques analizados.</p>
+          <p class="muted">Copie imágenes de cheques en la carpeta vigilada y aparecerán aquí en segundos.</p>
+        </div>
+      </div>
+      <div class="pager" id="pager">
+        <button class="btn small" id="prevPage">‹ Anterior</button>
+        <span id="pageInfo"></span>
+        <button class="btn small" id="nextPage">Siguiente ›</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="detailModal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <header class="modal-header">
+        <div>
+          <h3 id="detailTitle">Detalle</h3>
+          <span class="muted" id="detailMeta"></span>
+        </div>
+        <button class="icon-btn" data-close title="Cerrar">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="detail-image">
+          <div class="image-stage" id="imageStage">
+            <img id="detailImage" alt="Imagen del cheque">
+            <div class="overlay" id="overlay"></div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="toggleBoxes" checked> Mostrar zonas detectadas</label>
+          <div class="observations" id="observations"></div>
+          <details class="raw">
+            <summary>Texto completo detectado (OCR)</summary>
+            <pre id="rawText"></pre>
+          </details>
+        </div>
+        <form class="detail-fields" id="detailForm" autocomplete="off">
+          <div id="fieldsContainer"></div>
+          <div class="form-actions">
+            <button type="button" class="btn danger" id="btnDelete">Eliminar</button>
+            <button type="button" class="btn" id="btnReprocess">Reanalizar</button>
+            <div class="spacer"></div>
+            <button type="submit" class="btn primary">Guardar correcciones</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
