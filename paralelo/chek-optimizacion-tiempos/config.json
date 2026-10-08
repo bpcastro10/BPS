@@ -1,0 +1,22 @@
+{
+  "presupuesto_segundos_por_lado": 60,
+  "modelo_lectura": "v6_small",
+  "anverso": {
+    "micr_cheque_cuenta_banco": true,
+    "montos": true,
+    "ciudad_fecha": true,
+    "beneficiario": true
+  },
+  "detector": "small",
+  "lector_secundario": "v5_latin",
+  "lectura_profunda": true,
+  "lectura_profunda_modo": "dudosos",
+  "servicio_firmas_src": "externos",
+  "ejecucion": {
+    "preguntar_al_iniciar": true,
+    "dispositivo": "cpu",
+    "procesos": 1,
+    "gpus": "todas",
+    "precision_gpu": "float32"
+  }
+}

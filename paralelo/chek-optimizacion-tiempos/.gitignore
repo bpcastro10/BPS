@@ -1,0 +1,16 @@
+# Entorno e instalación local
+.venv/
+__pycache__/
+*.pyc
+
+# GLM-OCR (2,5 GB): lo descarga descargar_modelos.py
+modelos/GLM-OCR/
+modelos/descarga_glm.log
+
+# Generado al usar la PoC
+resultados/
+servidor.log
+
+# Muestras excluidas del repo
+muestras/
+muestras_variaciones/

@@ -1,0 +1,17 @@
+archivo,banco,numero_cheque,cuenta,ciudad,fecha,beneficiario,monto_numeros,monto_letras,micr,notas
+imagen (6).png,Banco Estudiantil Venus,05,,Guayaquil,2025-01-08,Miguel Aquino,1750.99,1750.99,,
+imagen (7).png,Banco Estudiantil Venus,05,,Manta,2025-01-08,David Estupiñán,1320.25,1320.25,,POR CONFIRMAR: apellido del beneficiario
+imagen (8).png,Banco Estudiantil Venus,06,,Guayaquil,2024-12-24,Grace Regalado,950.24,950.24,,Centavos en palabras con 'y' y sin 'con'
+imagen (9).png,Banco Estudiantil Venus,07,,Italia,2018-01-20,Sofía Loren,123.00,123.00,,
+imagen (10).png,Banco Estudiantil Venus,02,,Quito,2023-05-18,Leonardo Messi,1080.00,1080.00,,
+imagen (11).png,Banco Estudiantil Venus,06,,Quito,2024-12-16,Manuel Contreras,800.00,500.00,,Inconsistente a propósito: cifras 800 y letras quinientos
+imagen (12).png,Banco Estudiantil Venus,08,,Latacunga,2021-01-01,Jose Juan,10.00,10.00,,Junto al número de cheque hay una 'F'
+imagen (13).png,Banco Estudiantil Venus,02,,Indiana,2023-07-08,Camila Salazar,10100.00,10100.00,,
+imagen (14).png,Banco Estudiantil Venus,03,,Esmeraldas,2008-01-01,Cristian Castro,10000.00,10000.00,,
+imagen (15).png,Banco Estudiantil Venus,03,,Normandía,1944-06-06,George S. Patton,1000000.00,1000000.00,,POR CONFIRMAR: ciudad escrita 'Normandra'
+imagen (16).png,Banco Estudiantil Venus,03,,Roma,1504-07-03,Máximo Décimo Meridio,1.00,1.00,,
+cheque_0020.jpg,Banco Estudiantil Venus,07,,Quito,2024-03-02,Juan Leonardo Díaz,13.00,13.00,,
+cheque_0021.jpg,Banco Estudiantil Venus,07,,Tulcán,2025-01-09,Rodney Salazar,456.00,456.00,,Firmado fuera de la zona de firma (arriba). Letras con 'cuatro cientos' separado
+cheque_0022.jpg,Banco Estudiantil Venus,06,,Manta,2025-01-09,Camila Salazar,2500.00,2500.00,,Sin firma. Ciudad escrita 'Monta'
+cheque_0023.jpg,Banco Estudiantil Venus,05,,Esmeraldas,2025-01-07,Emma Watson,800.00,500.00,,Inconsistente: cifras 800 y letras quinientos (tachadas). Firmado fuera de la zona (abajo a la izquierda)
+cheque_0024.jpg,Banco Estudiantil Venus,06,,Normandía,2020-01-08,Emma Watson,1.00,1.00,,Todo fuera de lugar: firma dentro del recuadro US$; 1.00 en la línea de letras; fecha debajo de la etiqueta
