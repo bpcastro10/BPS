@@ -1,6 +1,15 @@
-# torch y torchvision (CPU) se instalan aparte desde el índice de PyTorch: ver instalar_y_levantar.bat
+# Misma instalación en CPU y en GPU NVIDIA.
+# La rueda CUDA 12.6 corre en CPU si no hay GPU, y en GPU con un driver CUDA 12.6 o más nuevo
+# (también drivers 13). La rueda CUDA 13 no arranca en un PC cuyo driver solo llega a CUDA 12:
+# nvidia-smi ve la tarjeta y torch dice que no hay GPU.
+# No uses el índice /whl/cpu: esa rueda no puede usar la GPU.
+# onnxruntime-gpu trae CPUExecutionProvider y CUDAExecutionProvider. No instales además "onnxruntime":
+# el paquete solo-CPU lo sustituye y deja la GPU inutilizable.
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.14.1+cu126
+torchvision==0.29.1+cu126
+onnxruntime-gpu==1.30.0
 rapidocr==3.9.2
-onnxruntime==1.30.0
 opencv-python-headless==5.0.0.93
 numpy==2.4.6
 huggingface_hub==1.33.0

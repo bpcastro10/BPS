@@ -2,8 +2,8 @@
 
 Solo escucha en este equipo. Las imágenes se procesan en memoria y no se guardan.
 
-Al levantar pregunta si usar CPU o GPU (si se detectó alguna) y cuántos cheques analizar a la vez,
-mostrando el máximo que aguanta el equipo y lo recomendado. Enter = recomendado. Los modelos se cargan
+Al levantar pregunta si usar CPU o GPU (si se detectó alguna) y cuántos procesos a la vez,
+entre el mínimo y el máximo que aguanta el equipo. Si no se escribe nada, queda el recomendado. Los modelos se cargan
 UNA sola vez y los análisis simultáneos los comparten.
 Sin preguntas:
     .venv\\Scripts\\python servidor.py --dispositivo gpu --paralelos 3 [--gpu 0]

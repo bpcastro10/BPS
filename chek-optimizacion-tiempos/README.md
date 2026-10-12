@@ -5,23 +5,23 @@
 1. Clonar: `git clone https://github.com/DarioRodriguez47/chek.git` (o descargar el ZIP).
 2. Doble clic en **`instalar_y_levantar.bat`**. La primera vez:
    - instala Python 3.11 con winget si falta;
-   - crea `.venv` e instala las librerías (`requirements.txt` + torch CPU);
+   - crea `.venv` e instala las librerías (`requirements.txt`: torch con CUDA, que también corre en CPU, y `onnxruntime-gpu`);
    - descarga GLM-OCR (2,5 GB) en `modelos/GLM-OCR` y los modelos de PaddleOCR (usa internet);
    - levanta la interfaz en http://127.0.0.1:8300 y abre el navegador.
 3. Las siguientes veces el mismo `.bat` solo levanta (o `iniciar.bat`).
 
-Requisitos: Windows 10/11, ~16 GB de RAM (el proceso usa ~5 GB), ~6 GB de disco. Más núcleos de CPU =
-más rápido (GLM-OCR es el 80 % del tiempo). Con GPU NVIDIA se puede instalar torch con CUDA para ir mucho más rápido.
+Requisitos: Windows 10/11, Python 3.11+, ~16 GB de RAM (el proceso usa ~5 GB), ~10 GB de disco (la rueda CUDA de torch es grande). Más núcleos de CPU =
+más rápido (GLM-OCR es el 80 % del tiempo). La misma instalación corre en CPU y, si hay GPU NVIDIA, en CUDA.
 
 ## CPU / GPU y análisis en paralelo (al levantar)
 
 Al iniciar (`iniciar.bat` o `instalar_y_levantar.bat`) la consola muestra el equipo detectado y pregunta:
 
-1. **CPU o GPU** (solo si hay una GPU NVIDIA utilizable con torch CUDA). GLM-OCR y el detector de firmas
-   van a la GPU; PaddleOCR también si está instalado `onnxruntime-gpu` (si no, sigue en CPU).
+1. **CPU o GPU** (solo si hay una GPU NVIDIA utilizable). GLM-OCR y el detector de firmas
+   van a la GPU; PaddleOCR también si `onnxruntime-gpu` ve CUDA (si no, sigue en CPU). Sin GPU, todo queda en CPU.
 2. **Qué GPU** (solo si hay más de una; por omisión la de más memoria libre).
-3. **Cuántos cheques analizar a la vez**, con el **máximo** que aguanta el equipo (el menor entre RAM libre,
-   núcleos y VRAM) y el **recomendado**. Enter = recomendado. **1 = modo actual** (sin cambios).
+3. **Cuántos procesos a la vez**, un número **entre el mínimo y el máximo** que aguanta el equipo
+   (el máximo es el menor entre RAM libre, núcleos y VRAM). Si no se escribe nada, queda el **recomendado**.
 
 **Los modelos se cargan UNA sola vez.** Los análisis simultáneos son hilos del mismo proceso que usan esos
 mismos modelos (ONNX y torch admiten llamadas a la vez y sueltan el GIL al calcular). No se duplica RAM
@@ -35,8 +35,9 @@ Sin preguntas: `servidor.py --dispositivo gpu --paralelos 3 [--gpu 0]`, o `--sin
 `float16` usa la mitad de VRAM pero puede cambiar algo la lectura). Diagnóstico solo:
 `.venv\Scripts\python -m poc.hardware`. `analizar.py` y `evaluar.py` aceptan `--dispositivo cuda:0`.
 
-Para usar una GPU NVIDIA hay que tener torch con CUDA en `.venv` (el instalador pone la versión CPU):
-ver https://pytorch.org/get-started/locally/ ; opcional `onnxruntime-gpu` en lugar de `onnxruntime`.
+CPU y GPU NVIDIA usan los mismos paquetes (`torch` CUDA 12.6 y `onnxruntime-gpu` en `requirements.txt`).
+Esa rueda usa la GPU si el driver admite CUDA 12.6 o superior (también un driver 13).
+Si no hay GPU, esa rueda de torch corre en CPU. No instales además el paquete `onnxruntime` (solo CPU): sustituye al de GPU.
 
 Todo corre en UN proceso: detector de firmas (código y modelo copiados de PR1/ServicioFirmas en
 `externos/` y `modelos/`), búsqueda de campos, PaddleOCR, GLM-OCR y la interfaz.

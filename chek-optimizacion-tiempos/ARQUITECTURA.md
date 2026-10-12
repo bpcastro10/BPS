@@ -1,7 +1,7 @@
 # Arquitectura de la PoC de lectura de cheques
 
 Resumen de qué se usa y cómo interactúan las piezas al analizar el anverso de un cheque.
-Todo corre en **un solo proceso local en CPU**: no usa nube ni servicios externos.
+Todo corre en **un solo proceso local**, en CPU o en GPU NVIDIA con la misma instalación: no usa nube ni servicios externos.
 
 ## Qué se usa
 

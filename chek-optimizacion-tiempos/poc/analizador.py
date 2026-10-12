@@ -76,6 +76,10 @@ class Analizador:
                 pass
         # ONNX y OpenCV quedan como siempre: cada sesión tiene UN grupo de hilos que comparten todas las llamadas
         gpu_onnx = int(self.dispositivo.split(":")[1]) if self.dispositivo.startswith("cuda") and ej.get("onnx_gpu") else None
+        if gpu_onnx is not None:
+            # Antes de abrir sesiones ONNX: las DLL de CUDA viven en la rueda de torch
+            from poc.hardware import preparar_runtime_gpu
+            preparar_runtime_gpu()
         onnx = params_onnx(None, gpu_onnx)
         self.localizador = Localizador(modelo, config.get("detector", "tiny"), onnx)
         self.lector = Lector(modelo, onnx)

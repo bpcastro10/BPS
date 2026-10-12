@@ -2,8 +2,8 @@
 
 Los modelos se cargan UNA sola vez; los análisis simultáneos usan esos mismos modelos (poc/paralelo.py).
 
-Las respuestas por omisión (Enter) son las recomendadas. Sin consola (o con --sin-preguntar) se usan
-los argumentos de línea de comandos o la sección "ejecucion" de config.json.
+En paralelismo, un número entre el mínimo y el máximo; Enter (nada escrito) deja el recomendado.
+Sin consola (o con --sin-preguntar) se usan los argumentos de línea de comandos o la sección "ejecucion" de config.json.
 """
 
 import sys
@@ -30,11 +30,24 @@ def _preguntar(texto, por_omision, validar):
 
 def _entero_entre(minimo, maximo):
     def validar(r):
-        n = int(r)
+        try:
+            n = int(r)
+        except ValueError:
+            raise ValueError(f"escribe un número entero entre {minimo} y {maximo}")
         if not minimo <= n <= maximo:
             raise ValueError(f"debe estar entre {minimo} y {maximo}")
         return n
     return validar
+
+
+def _dentro_de_rango(n, rec):
+    """Deja el número pedido dentro del mínimo y el máximo. Fuera de rango, se ajusta y se avisa."""
+    n = int(n)
+    if rec.minimo <= n <= rec.maximo:
+        return n
+    ajustado = min(max(n, rec.minimo), rec.maximo)
+    print(f"  [AVISO] {n} está fuera del rango permitido ({rec.minimo}-{rec.maximo}); se usa {ajustado}")
+    return ajustado
 
 
 def _cpu_o_gpu(r):
@@ -53,8 +66,8 @@ def _una_gpu(disponibles):
 
 
 def _mostrar_recomendacion(rec):
-    print(f"\n  Paralelismo en {rec.dispositivo.upper()}: máximo {rec.maximo} análisis a la vez, "
-          f"recomendado {rec.recomendado}")
+    print(f"\n  Paralelismo en {rec.dispositivo.upper()}: entre {rec.minimo} y {rec.maximo} procesos a la vez, "
+          f"por defecto {rec.recomendado}")
     print("  Límite por " + ", ".join(f"{k}: {v}" for k, v in rec.limites.items()))
     for n in rec.notas:
         print(f"   - {n}")
@@ -78,9 +91,14 @@ def elegir_plan(config, args=None):
     pedido = args.get("dispositivo") or (None if interactivo else ej.get("dispositivo", "cpu"))
     if not equipo.hay_gpu:
         if pedido == "gpu":
-            print("  [AVISO] se pidió GPU pero no hay ninguna utilizable: se ejecuta en CPU")
+            print("  [AVISO] se pidió GPU pero torch no puede usarla: se ejecuta en CPU")
         dispositivo = "cpu"
-        print("\n  Sin GPU utilizable: se ejecuta en CPU.")
+        if equipo.gpus_sin_cuda or equipo.motivo_gpu:
+            print("\n  La GPU se detectó, pero torch no puede usarla. Se ejecuta en CPU.")
+            if equipo.motivo_gpu:
+                print("  " + equipo.motivo_gpu)
+        else:
+            print("\n  No hay GPU NVIDIA: se ejecuta en CPU.")
     elif pedido in ("cpu", "gpu"):
         dispositivo = pedido
     else:
@@ -108,17 +126,19 @@ def elegir_plan(config, args=None):
     # 3. Cuántos análisis a la vez (sobre los mismos modelos)
     rec = hardware.recomendar(equipo, dispositivo, gpu, precision, con_glm)
     _mostrar_recomendacion(rec)
-    pedido_n = args.get("paralelos") or (None if interactivo else ej.get("paralelos", 1))
-    if pedido_n:
-        paralelos = max(1, int(pedido_n))
-        if paralelos > rec.maximo:
-            print(f"  [AVISO] se pidieron {paralelos} a la vez y el máximo estimado es {rec.maximo}: "
-                  "puede quedarse sin memoria o pasarse de tiempo")
-    elif rec.maximo <= 1:
-        paralelos = 1
+    pedido_n = args.get("paralelos")
+    if pedido_n is None and not interactivo:
+        pedido_n = ej.get("paralelos", rec.recomendado)
+    if pedido_n is not None:
+        paralelos = _dentro_de_rango(pedido_n, rec)
+    elif rec.minimo == rec.maximo:
+        paralelos = rec.minimo
+        print(f"  En este equipo solo se permite {paralelos} proceso{'s' if paralelos != 1 else ''} a la vez.")
     else:
-        paralelos = _preguntar(f"¿Cuántos cheques analizar a la vez? (1-{rec.maximo}; 1 = modo actual)",
-                               rec.recomendado, _entero_entre(1, rec.maximo))
+        print(f"  Escribe un número entre {rec.minimo} y {rec.maximo}. "
+              f"Si no escribes nada, queda {rec.recomendado}.")
+        paralelos = _preguntar(f"¿Cuántos procesos en paralelo? ({rec.minimo}-{rec.maximo})",
+                               rec.recomendado, _entero_entre(rec.minimo, rec.maximo))
 
     plan = {"dispositivo": dispositivo, "paralelos": paralelos, "gpu": gpu,
             "hilos_torch": hardware.hilos_torch(equipo, paralelos), "precision_gpu": precision,
