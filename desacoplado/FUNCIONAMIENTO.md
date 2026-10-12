@@ -119,7 +119,7 @@ El orden de abajo es el de `back/motor/analizador.py`. El OCR localiza primero. 
 
 Ninguna lectura se acepta solo porque el OCR o el modelo la propuso. Las reglas cruzan cifras con letras, la fecha con el calendario y el texto con la matriz de probabilidades (CTC). Si no hay margen claro, el campo sale en revisar.
 
-Detalle de esos pasos:
+Detalle corto:
 
 1. Abrir la imagen y llevarla a 592 px de ancho (`back/dominio/imagen.py`).
 2. El OCR busca etiquetas impresas ("Páguese a", "La suma de", "US$", …) y arma la zona de cada campo.
@@ -128,6 +128,205 @@ Detalle de esos pasos:
 5. MICR por plantillas E-13B, y el OCR en el número de cheque y la cuenta impresos. Luego montos, ciudad/fecha y beneficiario: tres versiones de cada zona, y en manuscrito también el lector secundario.
 6. Con el modo actual, `dudosos`, el modelo solo lee las zonas que quedaron en revisar, y solo si cabe en los 60 s. Esas zonas se vuelven a decidir con el texto nuevo, sin releer la imagen con el OCR.
 7. La API dibuja las zonas y responde. La imagen subida no se guarda.
+
+El recorrido de abajo es el mismo, con cada transformación de la imagen.
+
+## Procesamiento de la imagen, paso a paso
+
+Todo ocurre en memoria. El archivo que se arrastra o la ruta de la carpeta se leen, se recortan y se descartan. No queda una copia del cheque en disco. Lo que sí se guarda, al terminar un lote, es el Excel.
+
+El orden es el de `Analizador.analizar` en `back/motor/analizador.py`.
+
+### 1. Abrir el archivo en gris
+
+`back/dominio/plantilla.py` → `leer_gris`.
+
+La API recibe los bytes de la subida. La carpeta y la línea de comandos pasan una ruta (sirve con tildes y espacios). En los dos casos OpenCV decodifica TIF, TIFF, PNG, JPG o JPEG y se queda con un solo canal: escala de grises. Si el archivo no es una imagen, el análisis se corta ahí.
+
+Se anota el ancho y el alto originales. Si el ancho es menor que el 85 % de 592 px (unos 503 px), el cheque se sigue leyendo, pero al final todos los campos salen en revisar: a esa resolución los dígitos impresos ya se confunden.
+
+### 2. Llevar el cheque a 592 px de ancho
+
+`back/dominio/imagen.py` → `preparar_imagen`. Lo llama el localizador (`preparar`).
+
+592 px es el ancho del escaneo de referencia a 100 dpi. El alto se calcula en proporción, así un cheque apaisado sigue apaisado. Si el original es más ancho, se reduce con `INTER_AREA` (no deja dientes de sierra). Si es más angosto, se amplía con `INTER_CUBIC`.
+
+A partir de aquí todas las coordenadas (cajas, zonas, firmas, recuadros de la pantalla) están en esta imagen de trabajo, no en los píxeles del archivo original. La página dibuja encima de esta misma imagen.
+
+Esta imagen queda guardada en el hilo que analiza el cheque (`ultima_imagen`). Otro cheque en paralelo tiene la suya.
+
+### 3. Encontrar todas las cajas de texto
+
+`back/ocr/rapidocr/localizador.py` → `cajas`.
+
+La imagen de trabajo se amplía al doble (`INTER_CUBIC`) para no perder letras pequeñas, se pasa de gris a color (el detector espera tres canales) y entra al detector PP-OCRv6. En `config.json` el detector es `small`; también admite `tiny`.
+
+El detector devuelve un rectángulo, un texto y una confianza por cada trozo que ve. Esas coordenadas se dividen entre 2 para volver a la imagen de 592 px. Si no ve ninguna caja, el cheque sigue, pero los campos cuya zona no aparezca quedan en revisar.
+
+### 4. Reconocer las etiquetas impresas
+
+Sobre esas cajas, `_marcar_etiquetas`.
+
+Se normaliza el texto (sin tildes, sin espacios) y se compara el comienzo con las etiquetas que trae un cheque ecuatoriano: "Páguese a", "la orden de", "La suma de", "Dólares", "Ciudad y fecha", "Lugar y fecha", "Cheque N°", "Cuenta N°", "Firma". Hace falta un parecido de al menos 0,72, porque el OCR de la etiqueta suele equivocarse.
+
+"US$", "USD" o "$" al inicio de una caja se marcan como moneda, aunque el resto de la caja sea el monto escrito.
+
+Si la etiqueta viene pegada a la letra ("lasumadenovecientos…"), se estima dónde termina la etiqueta y dónde empieza lo escrito, en proporción a las letras. Las etiquetas de la izquierda que están sueltas (no pegadas) fijan un borde común, para que ese corte no se pase.
+
+"Cheque" y "Cuenta" solo valen en el tercio superior. "Firma", "Dólares" y "fecha" tienen que ir solas: un nombre largo que empieza parecido no se toma por etiqueta.
+
+### 5. Armar la zona de cada campo
+
+Sigue en `localizar`. Cada zona es un rectángulo `(x0, y0, x1, y1)` en píxeles de la imagen de 592 px. Si el rectángulo queda más chico que 8×6 px, se descarta.
+
+Por la etiqueta:
+
+| Zona | Cómo se calcula |
+|---|---|
+| `beneficiario` | A la derecha de "Páguese a" / "la orden de", hasta el "US$". Si no hay moneda, hasta el 76 % del ancho. |
+| `monto_numeros` | A la derecha del "US$", con espacio arriba para los centavos en superíndice. |
+| `monto_letras` | Renglón de "La suma de", un poco antes del fin de la etiqueta (lo escrito se monta encima) y hasta "Dólares" si está en la misma fila. |
+| `monto_letras_2` | Segundo renglón, debajo del primero y hasta "Dólares", solo si el detector vio texto escrito ahí. |
+| `ciudad_fecha` | A la derecha de "Ciudad / y fecha", o encima si la etiqueta es "Lugar y fecha de emisión" (va debajo de lo escrito). |
+| `cheque_impreso`, `cuenta_impresa` | A la derecha de su etiqueta, en la franja superior. |
+| `micr` | Franja inferior (por debajo del 75 % del alto) cuyas cajas son casi todo dígitos. |
+
+Si no aparece "US$", el monto en cifras se busca en el extremo derecho del renglón del beneficiario y se anota `recortar_prefijo_monto`: más adelante se quita el "US$" impreso que haya quedado dentro del recorte.
+
+El nombre del banco sale de las primeras cajas, comparadas con una lista de bancos ecuatorianos.
+
+Después, `back/dominio/clasificador.py` vuelve a mirar las cajas por lo que dicen, no por dónde están:
+
+- una fecha → ciudad y fecha;
+- palabras de número ("mil", "trescientos", "centavos") → monto en letras;
+- casi todo dígitos → monto en cifras, más las cajas chicas vecinas (centavos);
+- nombres o mayúsculas sin números → beneficiario;
+- leyendas impresas ("no invadir", "compañía anónima", el nombre del banco) → se descartan.
+
+Esa clasificación pisa a la zona de la etiqueta cuando encuentra el campo. La posición solo desempata, con un bono pequeño si la caja está cerca de su etiqueta. Así un monto escrito fuera de la línea igual entra en la zona.
+
+### 6. Separar lo impreso de lo manuscrito
+
+De vuelta en el analizador.
+
+Se copia la imagen de trabajo. El fondo es el percentil 90 de los píxeles (el papel, no la tinta). Sobre esa copia se pintan de fondo:
+
+- las cajas que el clasificador marcó como impresas (etiquetas y leyendas), solo hasta donde termina la etiqueta si venía pegada a la letra;
+- los dígitos del número de cheque y de la cuenta impresos, porque el recorte del monto en cifras llega a esa altura y si no se borran se cuelan como centavos.
+
+Los recortes de beneficiario, montos y ciudad/fecha salen de esta copia limpia. MICR, número de cheque y cuenta salen de la imagen original: ahí el impreso es el dato.
+
+### 7. Quitar la firma, o marcar la letra ilegible
+
+`externos/firmas/`, si `servicio_firmas_src` está en `config.json` (hoy `externos`).
+
+La imagen de trabajo se convierte a RGB y entra a YOLOS tiny (`mdefrance/yolos-tiny-signature-detection`, confianza 0,5). Las cajas superpuestas de la misma firma se unen.
+
+Después se busca la línea impresa de la firma: un trazo horizontal, en la mitad derecha y en la parte baja del cheque (entre el 55 % y el 95 % del alto, y entre un cuarto y la mitad del ancho). Sirve para tres cosas:
+
+- descartar detecciones que no caen sobre esa línea (el modelo a veces marca la fecha o el beneficiario);
+- partir una caja que tapa dos firmas una al lado de la otra;
+- si el modelo no vio nada, mirar si hay tinta encima de la línea (firmas que son solo el nombre).
+
+Con cada firma que queda:
+
+- se mide cuánto tapa a beneficiario, monto en letras, monto en cifras y ciudad/fecha (más del 30 % del área de la zona);
+- si tapa dos o más de esas zonas, no es una firma: es letra que el detector confunde con firma. Esas zonas quedan ilegibles. No se borra nada y, si hay dos o más, no se llama al modelo de letra;
+- si tapa una sola o ninguna, es firma: se pinta de fondo en la copia manuscrita para que no entre en el OCR ni en el modelo.
+
+### 8. Recortar cada campo
+
+`zona(nombre)` corta el rectángulo. Manuscrito desde la copia sin impresos ni firma. Impreso desde la imagen de trabajo.
+
+El monto en letras, si existe `monto_letras_2` y ese segundo renglón tiene más de un 0,4 % de píxeles de tinta (`proporcion_tinta`), se pega a la derecha del primero a la misma altura (`_unir_renglones`). Un segundo renglón vacío no se suma.
+
+Si el paso 5 anotó `recortar_prefijo_monto`, `quitar_impreso_a_la_izquierda` (`back/ocr/preproceso.py`) limpia el recorte del monto en cifras, busca componentes conectados y corta las letras chicas que quedan a la izquierda del primer trazo alto (el "US$" impreso). Hacen falta al menos dos letras chicas; si no, el recorte no se toca.
+
+### 9. Tres versiones de cada recorte
+
+`back/ocr/preproceso.py` → `limpiar`. Se arman una vez por zona y se reutilizan. No se vuelve a tocar la imagen del cheque.
+
+`limpiar` hace esto:
+
+1. Amplía el recorte ×3 o ×2 con `INTER_CUBIC`.
+2. Divide la imagen por un desenfoque mediano (ventana de 10 × escala, impar). El fondo de seguridad, que varía lento, se aplana; la tinta queda.
+3. Si la versión es "limpia": umbral de Otsu, se invierte para tener la tinta en blanco, se abren las líneas horizontales largas (las rayas impresas del cheque) y se restan de la tinta. Un desenfoque mediano de 3 px quita puntos sueltos.
+4. Si la versión es "gris": se devuelve el paso 2, sin binarizar. Conserva el trazo manuscrito fino que el umbral a veces se come.
+
+Las tres claves, en este orden:
+
+| Variante | Escala | Binariza | Para qué |
+|---|---|---|---|
+| `limpio_x3` | ×3 | sí | Lectura y matriz de probabilidades |
+| `gris_x3` | ×3 | no | Lectura y matriz de probabilidades |
+| `limpio_x2` | ×2 | sí | Solo lectura, otra escala |
+
+### 10. Leer cada versión con el OCR
+
+`back/ocr/rapidocr/lector.py` → `leer_con_probabilidades`.
+
+Las tres imágenes ya preparadas entran juntas en una pasada del reconocedor (hoy PP-OCRv6 small, `modelo_lectura`). No vuelve a detectar cajas: la zona ya está recortada. El modelo las normaliza al alto que espera, con el ancho de la más ancha, y devuelve texto y confianza por variante.
+
+Para `limpio_x3` y `gris_x3` también devuelve la matriz de probabilidades (tiempo × caracteres). El índice 0 de esa matriz es el blanco del CTC. `back/dominio/ctc.py` la usa después para puntuar un candidato ("475.60", una fecha, un nombre) contra los píxeles, no solo contra el texto que el OCR eligió.
+
+En las zonas manuscritas (`monto_letras`, `monto_numeros`, `ciudad_fecha`, `beneficiario`) las dos variantes de verificación pasan además por el lector secundario (hoy PP-OCRv5 latin). Se suma como más lecturas. MICR, número de cheque y cuenta no usan ese segundo lector.
+
+Esas lecturas y matrices se guardan por zona. Si más adelante el modelo de letra obliga a decidir otra vez, no se relee la imagen.
+
+### 11. MICR por plantillas, no por el OCR general
+
+`back/dominio/micr.py`, solo si la zona `micr` existe y el paso `micr_cheque_cuenta_banco` está activo.
+
+La franja se amplía ×4. Misma idea que el paso 9: división por desenfoque mediano, Otsu, y una apertura de 3×3 para quitar ruido. Cada mancha de tinta es un carácter; las partes que se solapan en horizontal (los símbolos ⑆ y ⑈) se unen. Cada carácter se normaliza a 20×28 px y se compara con plantillas E-13B sacadas, al arrancar, del cheque de referencia (`plantillas/pichincha_v1_referencia.tif`, cuyo MICR se conoce).
+
+Si el parecido con la mejor plantilla baja de 0,55, o si la primera y la segunda quedan a menos de 0,06, ese carácter sale como `?`. No se adivina. Un grupo con algún `?` no es automático: se llama al OCR general sobre la misma franja y los campos impresos quedan en revisar.
+
+Número de cheque y cuenta impresos sí van al OCR del paso 10, sobre su recorte. El banco cruza el nombre leído en el membrete con el código de banco de la MICR.
+
+### 12. Decidir con las reglas, todavía sin aceptar el texto crudo
+
+`back/dominio/campos.py`. Esto ya no transforma la imagen. Cruza lo leído:
+
+- cifras contra letras del monto;
+- la fecha contra el calendario;
+- el beneficiario contra el diccionario de nombres;
+- cada candidato contra la matriz CTC.
+
+Sin margen claro, el campo queda en revisar. El texto de una sola variante no alcanza para aceptarlo.
+
+Cada paso (MICR, montos, ciudad/fecha, beneficiario) mide su tiempo. Si lo que falta más el costo estimado de ese paso pasa de `presupuesto_segundos_por_lado` (60 s), el paso no se ejecuta y sus campos salen en revisar. Si el localizador no encontró la zona, igual: revisar, con el motivo.
+
+### 13. Modelo de letra, solo donde hace falta
+
+`back/modelo/glm_ocr.py`, si `lectura_profunda` es true.
+
+Modo `dudosos` (el de `config.json`): se llama solo para los pasos manuscritos que quedaron en revisar (beneficiario, monto en letras, ciudad/fecha). El monto en cifras no se le manda; se vuelve a decidir junto con las letras.
+
+Modo `siempre`: las zonas manuscritas activas se leen antes de las reglas.
+
+Antes de llamarlo se estima el tiempo (unos 2 s más lo medido por token). Si no cabe en los 60 s, se omite y el campo sigue en revisar.
+
+La imagen que ve el modelo se arma así, en una sola pasada:
+
+1. Cada recorte (el mismo del paso 8, ya sin etiqueta ni firma) se lleva a 56 px de alto, como máximo 900 px de ancho.
+2. Se rellena con blanco hasta un ancho fijo y se le deja un margen.
+3. Las tiras se apilan en vertical: un renglón por zona.
+4. Esa pila, en RGB, entra a GLM-OCR con el pedido "Text Recognition:".
+5. La respuesta se reparte por renglón. Un renglón que no pasa la validación se tira.
+
+Ese texto entra como una lectura más, con la variante `glm-ocr`, delante de las del OCR. El paso se vuelve a ejecutar (`decidir_con_glm`) con las lecturas y matrices que ya estaban guardadas. No hay una segunda pasada del detector ni de `limpiar`.
+
+Si el detector de firmas marcó dos o más zonas como ilegibles, esta llamada no se hace.
+
+### 14. Cierre y dibujo para la pantalla
+
+Si alguna zona quedó ilegible, sus campos se fuerzan a revisar aunque las reglas los hubieran aceptado. Lo mismo si la resolución del paso 1 no alcanzaba.
+
+El estado del cheque es `OK` solo cuando ningún campo pide revisar.
+
+La API (`back/api/servidor.py` → `_imagen_con_zonas`) toma la imagen de trabajo, la amplía ×2, la pasa a color y dibuja cada zona: verde si sus campos se aceptaron, naranja si alguno queda en revisar. Esa imagen va en el JSON en base64. El archivo original no se escribe en disco.
+
+En un lote, el Excel se arma al terminar, en el orden de la carpeta. La miniatura de cada fila se genera igual, releyendo el archivo de la carpeta y volviendo a pasar por el paso 2 solo para dibujar: el análisis ya había terminado.
 
 ## Paralelización
 
