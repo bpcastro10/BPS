@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from poc.analizador import Analizador
+from back.motor.analizador import Analizador
 
 RAIZ = Path(__file__).parent
 
@@ -27,8 +27,8 @@ def main():
     if a.modelo:
         config["modelo_lectura"] = a.modelo
     if a.dispositivo != "cpu":
-        from poc.hardware import detectar
-        from poc.paralelo import config_de_ejecucion
+        from back.motor.hardware import detectar
+        from back.motor.paralelo import config_de_ejecucion
         config = config_de_ejecucion(config, a.dispositivo, None, config.get("ejecucion", {}).get("precision_gpu", "float32"),
                                     detectar().onnx_cuda)
     analizador = Analizador(config, RAIZ)

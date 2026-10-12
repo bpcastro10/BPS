@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lectura de cheques</title>
+<style>
+  :root {
+    --fondo: #f5f6f8; --panel: #ffffff; --texto: #1d2330; --suave: #5f6878; --borde: #dfe3ea;
+    --acento: #2457c5; --ok: #1f8a4c; --ok-fondo: #e3f4ea; --rev: #b8620b; --rev-fondo: #fdf0de;
+    --err: #b42318; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fondo: #14171d; --panel: #1c2028; --texto: #e7eaf0; --suave: #9aa3b2; --borde: #2c323d;
+      --acento: #7aa2ff; --ok: #4cc584; --ok-fondo: #173326; --rev: #f0a64a; --rev-fondo: #3a2a14; --err: #ff7b6e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, "Segoe UI", sans-serif; background: var(--fondo); color: var(--texto); }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--borde); background: var(--panel);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header span { color: var(--suave); font-size: 13px; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  main > section { min-width: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); margin: 0 0 10px; }
+  #zona { border: 2px dashed var(--borde); border-radius: 8px; padding: 22px 10px; text-align: center; cursor: pointer;
+    color: var(--suave); transition: border-color .15s; }
+  #zona.encima, #zona:hover { border-color: var(--acento); color: var(--texto); }
+  #zona strong { display: block; color: var(--texto); word-break: break-all; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--borde); }
+  .item:last-of-type { border-bottom: 0; }
+  .item label { flex: 1; cursor: pointer; }
+  .item small { color: var(--suave); font-family: var(--mono); }
+  .total { display: flex; justify-content: space-between; margin-top: 8px; font-weight: 600; }
+  button { width: 100%; margin-top: 14px; padding: 10px; font: inherit; font-weight: 600; border: 0; border-radius: 8px;
+    background: var(--acento); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secundario { background: none; color: var(--acento); border: 1px solid var(--borde); }
+  button.chico { width: auto; margin: 0; padding: 6px 14px; }
+  .nota { color: var(--suave); font-size: 12px; margin-top: 10px; }
+  code { font-family: var(--mono); font-size: 12px; }
+  #vacio { color: var(--suave); text-align: center; padding: 60px 10px; }
+  .veredicto { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { padding: 4px 12px; border-radius: 99px; font-weight: 700; font-size: 13px; }
+  .chip.ok { background: var(--ok-fondo); color: var(--ok); }
+  .chip.rev { background: var(--rev-fondo); color: var(--rev); }
+  .tiempo { font-family: var(--mono); }
+  .tiempo.fuera { color: var(--err); font-weight: 700; }
+  .barra { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--borde); margin: 4px 0 2px; }
+  .barra div { height: 100%; }
+  .leyenda { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--suave); }
+  .leyenda i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+  img.cheque { width: 100%; border-radius: 6px; border: 1px solid var(--borde); margin: 10px 0 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { font-size: 12px; color: var(--suave); font-weight: 600; white-space: nowrap; }
+  td.valor { font-family: var(--mono); font-weight: 600; word-break: break-word; }
+  td.notas { color: var(--suave); font-size: 12px; }
+  .estado { font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .estado.ok { color: var(--ok); } .estado.rev { color: var(--rev); } .estado.error { color: var(--err); }
+  .conf, .marca { font-family: var(--mono); white-space: nowrap; font-size: 12px; }
+  details { margin-top: 12px; } summary { cursor: pointer; color: var(--suave); }
+  pre { font-family: var(--mono); font-size: 12px; background: var(--fondo); padding: 10px; border-radius: 6px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .error { color: var(--err); font-weight: 600; }
+  .tabla-scroll { overflow-x: auto; }
+  .pestanas { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--borde); }
+  .pestanas button { width: auto; margin: 0; padding: 8px 16px; background: none; color: var(--suave);
+    border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; }
+  .pestanas button.activa { color: var(--acento); border-bottom-color: var(--acento); }
+  input[type=text] { width: 100%; padding: 9px 10px; font: 13px var(--mono); border: 1px solid var(--borde);
+    border-radius: 8px; background: var(--fondo); color: var(--texto); }
+  .fila-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .contadores { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0; }
+  .contador { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; }
+  .contador b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .contador span { color: var(--suave); font-size: 12px; }
+  .progreso { height: 10px; border-radius: 5px; background: var(--borde); overflow: hidden; }
+  .progreso div { height: 100%; background: var(--acento); transition: width .3s; }
+  .filtros { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .filtros button { width: auto; margin: 0; padding: 4px 12px; font-size: 12px; border-radius: 99px;
+    background: none; border: 1px solid var(--borde); color: var(--suave); }
+  .filtros button.activa { background: var(--acento); border-color: var(--acento); color: #fff; }
+  tr.clic { cursor: pointer; } tr.clic:hover td { background: var(--fondo); }
+  tr.elegida td { background: var(--fondo); box-shadow: inset 3px 0 0 var(--acento); }
+  .cronometro { font: 700 40px var(--mono); color: var(--texto); font-variant-numeric: tabular-nums; }
+  #detalleLote { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--borde); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lectura de cheques</h1>
+  <span id="info">cargando…</span>
+</header>
+<main>
+  <section>
+    <div class="panel" id="panelSubida">
+      <h2>1. Imagen del anverso</h2>
+      <div id="zona" tabindex="0">Arrastra el TIF/PNG/JPG aquí<br>o haz clic para elegirlo<strong id="nombre"></strong></div>
+      <input type="file" id="archivo" accept=".tif,.tiff,.png,.jpg,.jpeg" hidden>
+    </div>
+    <div class="panel" id="panelLista" style="margin-top:16px">
+      <h2><span id="numLista">2.</span> Qué analizar</h2>
+      <div id="lista"></div>
+      <div class="total"><span>Estimado por lado (peor caso)</span><span id="estimado" class="tiempo"></span></div>
+      <button id="analizar" disabled>Analizar</button>
+      <div class="nota">La firma la revisa el servicio aparte. Todo corre en este equipo; las imágenes no se guardan.</div>
+    </div>
+  </section>
+  <section>
+    <div class="pestanas">
+      <button class="activa" data-pestana="uno">Un cheque</button>
+      <button data-pestana="carpeta">Carpeta</button>
+    </div>
+    <div class="panel" id="resultado">
+      <div id="vacio">Sube un cheque y pulsa <b>Analizar</b>.</div>
+    </div>
+    <div id="vistaCarpeta" hidden>
+      <div class="panel">
+        <h2>Carpeta a analizar</h2>
+        <input type="text" id="ruta" placeholder="C:\Users\...\cheques" spellcheck="false" autocomplete="off">
+        <div class="fila-form">
+          <label><input type="checkbox" id="subcarpetas"> Incluir subcarpetas</label>
+          <span style="flex:1"></span>
+          <button id="analizarCarpeta" class="chico">Analizar carpeta</button>
+        </div>
+        <div class="nota">Pega la ruta tal como aparece en la barra del Explorador de Windows. Se analizan .tif, .tiff, .png, .jpg
+          y .jpeg con la selección de la izquierda. Si la carpeta trae un <code>verdad.csv</code>, también se mide el acierto.</div>
+        <p id="errorCarpeta" class="error" hidden></p>
+      </div>
+      <div class="panel" id="panelLote" style="margin-top:16px" hidden></div>
+    </div>
+  </section>
+</main>
+<script>
+const PASOS = [
+  {id: "micr_cheque_cuenta_banco", nombre: "MICR · n.º cheque · cuenta · banco", costo: 1.5},
+  {id: "montos", nombre: "Monto en cifras y en letras (cruzados)", costo: 4.0},
+  {id: "ciudad_fecha", nombre: "Ciudad y fecha", costo: 1.0},
+  {id: "beneficiario", nombre: "Beneficiario (con diccionario de nombres)", costo: 1.5},
+];
+const NOMBRES = {micr: "Línea MICR", numero_cheque: "N.º de cheque", cuenta: "Cuenta", banco: "Banco",
+  monto_numeros: "Monto en cifras", monto_letras: "Monto en letras", ciudad: "Ciudad", fecha: "Fecha",
+  beneficiario: "Beneficiario"};
+const COLORES_PASO = {abrir_imagen: "#c4c9d2", buscar_campos: "#8a93a3", firmas: "#d1495b", lectura_profunda: "#0f9fa8",
+  micr_cheque_cuenta_banco: "#2457c5", montos: "#1f8a4c", ciudad_fecha: "#b8620b", beneficiario: "#8e44ad"};
+const ICONO = {ok_auto: "✔", ok_revisar: "✔?", error_revisar: "✘?", error_auto: "✘!!"};
+let archivo = null, presupuesto = 8;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+function seleccion() {
+  const s = {};
+  PASOS.forEach(p => s[p.id] = $("chk_" + p.id).checked);
+  return s;
+}
+function actualizarEstimado() {
+  const t = 3.0 + 15.0 + PASOS.filter(p => $("chk_" + p.id).checked).reduce((a, p) => a + p.costo, 0);
+  $("estimado").textContent = `${t.toFixed(1)} s / ${presupuesto} s`;
+  $("estimado").classList.toggle("fuera", t > presupuesto);
+}
+async function iniciar() {
+  const c = await (await fetch("/api/config")).json();
+  presupuesto = c.presupuesto;
+  $("info").textContent = `modelo ${c.modelo} · límite ${c.presupuesto} s por lado · local`
+    + (c.ejecucion ? ` · ${c.ejecucion.descripcion}` : "");
+  $("lista").innerHTML = PASOS.map(p => `
+    <div class="item"><input type="checkbox" id="chk_${p.id}" ${c.seleccion[p.id] ? "checked" : ""}>
+    <label for="chk_${p.id}">${p.nombre}</label><small>~${p.costo} s</small></div>`).join("");
+  PASOS.forEach(p => $("chk_" + p.id).addEventListener("change", actualizarEstimado));
+  actualizarEstimado();
+}
+
+// Tabla de campos de un resultado (se usa en "Un cheque" y en el detalle de la carpeta)
+function tablaCampos(detalle, comparacion, esperado) {
+  const conVerdad = comparacion && Object.keys(comparacion).length;
+  const filas = Object.entries(detalle).map(([k, d]) => `
+    <tr><td>${NOMBRES[k] || k}</td><td class="valor">${esc(d.valor ?? "—")}</td>
+    <td class="conf">${Math.round(d.confianza * 100)} %</td>
+    <td class="estado ${d.revisar ? "rev" : "ok"}">${d.revisar ? "REVISAR" : "OK"}</td>
+    ${conVerdad ? `<td class="marca">${comparacion[k] ? ICONO[comparacion[k]] + " " + esc(esperado[k]) : ""}</td>` : ""}
+    <td class="notas">${esc(d.nota)}</td></tr>`).join("");
+  return `<div class="tabla-scroll"><table><thead><tr><th>Campo</th><th>Valor</th><th>Confianza</th><th>Estado</th>
+    ${conVerdad ? "<th>Esperado</th>" : ""}<th>Cómo se decidió</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+}
+const leyendaZonas = `<div class="leyenda"><span><i style="background:#3caa3c"></i>zona aceptada</span>
+  <span><i style="background:#ff8c00"></i>zona a revisar</span></div>`;
+
+// ---------------- Un cheque ----------------
+// Tiempos medidos en el navegador (ms), para comparar de punta a punta con otro sistema
+let tCarga = null, historial = [];
+const seg = ms => (ms / 1000).toFixed(3);
+async function elegir(f) {
+  if (!f) return;
+  $("analizar").disabled = true;
+  const t0 = performance.now();
+  archivo = new File([await f.arrayBuffer()], f.name, {type: f.type});   // se lee una vez: la subida no relee el disco
+  tCarga = performance.now() - t0;
+  $("nombre").textContent = `${f.name} · ${(f.size / 1024).toFixed(0)} KB · cargada en ${seg(tCarga)} s`;
+  $("analizar").disabled = false;
+}
+
+// Envía con XMLHttpRequest para saber cuándo termina la subida y cuándo llega la respuesta
+function enviar(fd, marcas) {
+  return new Promise((ok, mal) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/api/analizar");
+    x.upload.onload = () => { marcas.subida = performance.now(); marcas.fase = "procesando en el servidor"; };
+    x.onreadystatechange = () => {
+      if (x.readyState === 2) { marcas.cabeceras = performance.now(); marcas.fase = "descargando respuesta"; }
+    };
+    x.onload = () => { marcas.descarga = performance.now(); ok(x); };
+    x.onerror = () => mal(new Error("No se pudo conectar con el servidor"));
+    x.send(fd);
+  });
+}
+$("zona").onclick = () => $("archivo").click();
+$("zona").onkeydown = e => { if (e.key === "Enter" || e.key === " ") $("archivo").click(); };
+$("archivo").onchange = e => elegir(e.target.files[0]);
+["dragenter", "dragover"].forEach(ev => $("zona").addEventListener(ev, e => { e.preventDefault(); $("zona").classList.add("encima"); }));
+["dragleave", "drop"].forEach(ev => $("zona").addEventListener(ev, e => { e.preventDefault(); $("zona").classList.remove("encima"); }));
+$("zona").addEventListener("drop", e => elegir(e.dataTransfer.files[0]));
+
+$("analizar").onclick = async () => {
+  const fd = new FormData();
+  fd.append("imagen", archivo);
+  fd.append("seleccion", JSON.stringify(seleccion()));
+  $("analizar").disabled = true;
+  const marcas = {inicio: performance.now(), fase: "subiendo imagen"};
+  $("resultado").innerHTML = `<div id="vacio"><div class="cronometro" id="crono">0.0 s</div><div id="fase"></div></div>`;
+  const reloj = setInterval(() => {
+    const s = ((performance.now() - marcas.inicio) / 1000).toFixed(1);
+    $("analizar").textContent = `Analizando… ${s} s`;
+    if ($("crono")) { $("crono").textContent = `${s} s`; $("fase").textContent = marcas.fase; }
+  }, 100);
+  try {
+    const x = await enviar(fd, marcas);
+    const r = JSON.parse(x.responseText);
+    marcas.json = performance.now();
+    if (x.status !== 200) throw new Error(r.detail || "Error al analizar");
+    clearInterval(reloj);
+    mostrar(r);
+    marcas.pintado = performance.now();
+    agregarTiempos(r, marcas);
+  } catch (e) {
+    $("resultado").innerHTML = `<p class="error">${esc(e.message)}</p>`;
+  } finally {
+    clearInterval(reloj);
+    $("analizar").disabled = false;
+    $("analizar").textContent = "Analizar";
+  }
+};
+
+const NOMBRES_PASO = {abrir_imagen: "Abrir/decodificar imagen", buscar_campos: "Ubicar campos (PP-OCR detector)",
+  firmas: "Detector de firmas (YOLOS)", lectura_profunda: "Lectura profunda (GLM-OCR)",
+  micr_cheque_cuenta_banco: "MICR · n.º cheque · cuenta", montos: "Montos (cifras y letras)",
+  ciudad_fecha: "Ciudad y fecha", beneficiario: "Beneficiario"};
+
+// Desglose de punta a punta: navegador -> red -> servidor -> análisis -> red -> navegador
+function filasTiempos(r, m) {
+  const sv = r.tiempos_servidor_s || {}, an = r.tiempos_s;
+  const espera = (m.cabeceras - (m.subida ?? m.inicio)) / 1000;
+  const filas = [
+    ["Navegador", "Cargar imagen (leer archivo)", tCarga / 1000],
+    ["Red", "Subir imagen al servidor", ((m.subida ?? m.inicio) - m.inicio) / 1000],
+    ["Servidor", "Recibir archivo", sv.leer_subida],
+    ["Servidor", "Esperar turno (otro cheque en curso)", sv.espera_cola],
+    ...Object.entries(an).filter(([k]) => k !== "total").map(([k, v]) => ["Análisis", NOMBRES_PASO[k] || k, v]),
+    ["Análisis", "Subtotal análisis", an.total, true],
+    ["Servidor", "Dibujar zonas en la imagen", sv.dibujar_zonas],
+    ["Red", "Otros (HTTP, multipart, serializar)", Math.max(0, espera - (sv.total || 0))],
+    ["Red", "Descargar respuesta", (m.descarga - m.cabeceras) / 1000],
+    ["Navegador", "Leer JSON y mostrar resultado", (m.pintado - m.descarga) / 1000],
+  ];
+  return filas.filter(f => f[2] != null);
+}
+
+function agregarTiempos(r, m) {
+  const filas = filasTiempos(r, m);
+  const total = (m.pintado - m.inicio) / 1000 + tCarga / 1000;
+  historial.push({archivo: r.archivo, kb: Math.round(r.tamano_bytes / 1024), total, filas});
+  const tabla = filas.map(([g, n, v, sub]) => `<tr${sub ? ' style="font-weight:600"' : ""}><td class="notas">${g}</td><td>${n}</td>
+    <td class="tiempo" style="text-align:right">${v.toFixed(3)} s</td><td class="notas" style="text-align:right">${(100 * v / total).toFixed(0)} %</td></tr>`).join("");
+  const det = document.createElement("details");
+  det.open = true;
+  det.innerHTML = `<summary>Tiempos de punta a punta: <b class="tiempo">${total.toFixed(3)} s</b> (desde cargar la imagen hasta ver el resultado)</summary>
+    <div class="tabla-scroll"><table><thead><tr><th>Dónde</th><th>Proceso</th><th style="text-align:right">Tiempo</th><th style="text-align:right">%</th></tr></thead>
+    <tbody>${tabla}<tr style="font-weight:700"><td></td><td>Total punta a punta</td><td class="tiempo" style="text-align:right">${total.toFixed(3)} s</td><td></td></tr></tbody></table></div>
+    <div class="fila-form"><button class="secundario chico" id="copiarTiempos">Copiar historial (para Excel)</button>
+      <button class="secundario chico" id="limpiarTiempos">Borrar historial</button>
+      <span class="nota" style="margin:0">${historial.length} cheque(s) en el historial · promedio ${(historial.reduce((a, h) => a + h.total, 0) / historial.length).toFixed(3)} s</span></div>`;
+  $("resultado").querySelector(".barra").insertAdjacentElement("beforebegin", det);
+  $("copiarTiempos").onclick = async () => {
+    const pasos = [...new Set(historial.flatMap(h => h.filas.map(f => f[1])))];
+    const tsv = [["archivo", "KB", ...pasos, "total punta a punta"].join("\t"),
+      ...historial.map(h => [h.archivo, h.kb, ...pasos.map(p => { const f = h.filas.find(x => x[1] === p);
+        return f ? f[2].toFixed(3).replace(".", ",") : ""; }), h.total.toFixed(3).replace(".", ",")].join("\t"))].join("\n");
+    try { await navigator.clipboard.writeText(tsv); $("copiarTiempos").textContent = "Copiado ✔"; }
+    catch (e) { $("copiarTiempos").textContent = "No se pudo copiar"; }
+  };
+  $("limpiarTiempos").onclick = () => { historial = []; $("limpiarTiempos").textContent = "Historial borrado"; };
+}
+
+function mostrar(r) {
+  const t = r.tiempos_s, ok = r.estado === "OK";
+  const pasos = Object.entries(t).filter(([k]) => k !== "total");
+  const barra = pasos.map(([k, v]) => `<div style="width:${100 * v / presupuesto}%;background:${COLORES_PASO[k] || "#999"}" title="${k}: ${v} s"></div>`).join("");
+  const leyenda = pasos.map(([k, v]) => `<span><i style="background:${COLORES_PASO[k] || "#999"}"></i>${k.replace(/_/g, " ")} ${v.toFixed(2)} s</span>`).join("");
+  const m = (r.validaciones || {}).montos;
+  const avisos = [];
+  if (r.detalle.fecha && r.detalle.fecha.posdatado) avisos.push("Cheque posdatado");
+  if (r.calidad_imagen && !r.calidad_imagen.suficiente) avisos.push(`Resolución insuficiente (${r.calidad_imagen.ancho_px} px)`);
+  if (r.pasos_omitidos_por_tiempo && r.pasos_omitidos_por_tiempo.length) avisos.push("Pasos omitidos por tiempo: " + r.pasos_omitidos_por_tiempo.join(", "));
+  (r.localizacion.notas || []).forEach(n => avisos.push(n.charAt(0).toUpperCase() + n.slice(1)));
+  $("resultado").innerHTML = `
+    <div class="veredicto">
+      <span class="chip ${ok ? "ok" : "rev"}">${ok ? "OK · todo automático" : "REVISAR · " + r.campos_a_revisar.length + " campo(s)"}</span>
+      <span class="tiempo ${r.dentro_de_presupuesto ? "" : "fuera"}">${t.total.toFixed(2)} s de ${presupuesto} s</span>
+      <span style="color:var(--suave);font-size:12px">${esc(r.archivo)} · ${esc(r.localizacion.banco_impreso || "banco no identificado")}
+        · ${Object.keys(r.localizacion.etiquetas).length} etiquetas encontradas</span>
+    </div>
+    <div class="barra">${barra}</div>
+    <div class="leyenda">${leyenda}</div>
+    ${avisos.map(a => `<p class="error">⚠ ${esc(a)}</p>`).join("")}
+    <img class="cheque" src="data:image/png;base64,${r.imagen_zonas}" alt="Cheque alineado con las zonas leídas">
+    ${leyendaZonas}
+    ${tablaCampos(r.detalle)}
+    ${m ? `<p style="margin-top:10px">Monto en cifras = letras: <b style="color:var(${m.coinciden ? "--ok" : "--rev"})">${m.coinciden ? "✔ verificado" : "✘ no confirmado"}</b>
+      ${m.top3 ? `<span style="color:var(--suave);font-size:12px"> · candidatos: ${Object.entries(m.top3).map(([v, p]) => `${v} (${p})`).join(", ")}</span>` : ""}</p>` : ""}
+    <details><summary>Etiquetas impresas encontradas</summary><pre>${esc(JSON.stringify(r.localizacion.etiquetas, null, 2))}</pre></details>
+    <details><summary>Lecturas crudas del OCR (antes de las reglas)</summary><pre>${esc(JSON.stringify(r.lecturas_crudas, null, 2))}</pre></details>
+    <details><summary>JSON completo</summary><pre>${esc(JSON.stringify(Object.assign({}, r, {imagen_zonas: "(omitida)"}), null, 2))}</pre></details>`;
+}
+
+// ---------------- Pestañas ----------------
+document.querySelectorAll(".pestanas button").forEach(b => b.onclick = () => {
+  const p = b.dataset.pestana;
+  document.querySelectorAll(".pestanas button").forEach(x => x.classList.toggle("activa", x === b));
+  $("resultado").hidden = p !== "uno";
+  $("vistaCarpeta").hidden = p !== "carpeta";
+  $("panelSubida").hidden = p !== "uno";
+  $("analizar").hidden = p !== "uno";
+  $("panelLista").style.marginTop = p === "uno" ? "16px" : "0";
+  $("numLista").textContent = p === "uno" ? "2." : "1.";
+});
+
+// ---------------- Carpeta ----------------
+let lote = null, filtro = "todos", elegida = null, sondeo = null;
+const imagenesDetalle = {};
+try { $("ruta").value = localStorage.getItem("ultimaRuta") || ""; } catch (e) {}
+$("ruta").addEventListener("keydown", e => { if (e.key === "Enter") $("analizarCarpeta").click(); });
+
+$("analizarCarpeta").onclick = async () => {
+  $("errorCarpeta").hidden = true;
+  const ruta = $("ruta").value.trim();
+  if (!ruta) return;
+  try { localStorage.setItem("ultimaRuta", ruta); } catch (e) {}
+  $("analizarCarpeta").disabled = true;
+  try {
+    const resp = await fetch("/api/lotes", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ruta, subcarpetas: $("subcarpetas").checked, seleccion: seleccion()})});
+    const r = await resp.json();
+    if (!resp.ok) throw new Error(r.detail || "No se pudo iniciar");
+    lote = {id: r.id, resultados: [], info: null};
+    filtro = "todos"; elegida = null;
+    $("panelLote").hidden = false;
+    sondear();
+  } catch (e) {
+    $("errorCarpeta").textContent = e.message;
+    $("errorCarpeta").hidden = false;
+    $("analizarCarpeta").disabled = false;
+  }
+};
+
+async function sondear() {
+  clearTimeout(sondeo);
+  if (!lote) return;
+  try {
+    const r = await (await fetch(`/api/lotes/${lote.id}?desde=${lote.resultados.length}`)).json();
+    lote.resultados.push(...r.resultados);
+    lote.info = r;
+    pintarLote();
+    if (r.estado === "procesando" || r.estado === "en_cola") sondeo = setTimeout(sondear, 1000);
+    else $("analizarCarpeta").disabled = false;
+  } catch (e) { sondeo = setTimeout(sondear, 2000); }
+}
+
+const mmss = s => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const tieneErrorAuto = f => Object.values(f.comparacion || {}).includes("error_auto");
+function pasaFiltro(f) {
+  if (filtro === "todos") return true;
+  if (filtro === "error_auto") return tieneErrorAuto(f);
+  return f.estado === filtro;
+}
+
+function pintarLote() {
+  const r = lote.info, enCurso = r.estado === "procesando" || r.estado === "en_cola";
+  const pct = r.total ? 100 * r.hechos / r.total : 0;
+  const errAuto = lote.resultados.filter(tieneErrorAuto).length;
+  const estadoTxt = {en_cola: "En cola", procesando: "Procesando", terminado: "Terminado", cancelado: "Cancelado"}[r.estado];
+  const filas = lote.resultados.map((f, i) => [f, i]).filter(([f]) => pasaFiltro(f)).map(([f, i]) => {
+    const c = f.campos || {}, cmp = Object.values(f.comparacion || {});
+    const aciertos = r.con_verdad ? `<td class="marca">${cmp.length ? cmp.filter(t => t.startsWith("ok")).length + "/" + cmp.length : "—"}
+      ${tieneErrorAuto(f) ? '<b class="estado error"> ✘!!</b>' : ""}</td>` : "";
+    return `<tr class="clic ${elegida === i ? "elegida" : ""}" data-i="${i}">
+      <td>${esc(f.archivo)}</td>
+      <td class="estado ${f.estado === "OK" ? "ok" : f.estado === "ERROR" ? "error" : "rev"}">${f.estado}</td>
+      <td class="tiempo ${f.dentro_de_presupuesto === false ? "fuera" : ""}">${f.tiempo_s != null ? f.tiempo_s.toFixed(2) + " s" : "—"}</td>
+      <td class="valor">${esc(c.monto_numeros ?? "—")}</td><td class="valor">${esc(c.fecha ?? "—")}</td>
+      <td class="valor">${esc(c.numero_cheque ?? "—")}</td>
+      <td class="notas">${esc(f.error || (f.campos_a_revisar || []).map(k => NOMBRES[k] || k).join(", "))}</td>${aciertos}</tr>`;
+  }).join("");
+  const acierto = Object.keys(r.acierto || {}).length ? `<details open><summary>Acierto contra verdad.csv</summary>
+    <div class="tabla-scroll"><table><thead><tr><th>Campo</th><th>✔ automático</th><th>✔ a revisar</th><th>✘ a revisar</th><th>✘ automático</th><th>Acierto</th></tr></thead><tbody>
+    ${Object.entries(r.acierto).map(([c, k]) => { const n = k.ok_auto + k.ok_revisar + k.error_revisar + k.error_auto;
+      return `<tr><td>${NOMBRES[c] || c}</td><td>${k.ok_auto}</td><td>${k.ok_revisar}</td><td>${k.error_revisar}</td>
+      <td class="${k.error_auto ? "estado error" : ""}">${k.error_auto}</td><td>${Math.round(100 * (k.ok_auto + k.ok_revisar) / n)} %</td></tr>`; }).join("")}
+    </tbody></table></div></details>` : "";
+  const botonesFiltro = [["todos", "Todos"], ["OK", "OK"], ["REVISAR", "A revisar"], ["ERROR", "Con error"]]
+    .concat(r.con_verdad ? [["error_auto", `Errores aceptados (${errAuto})`]] : [])
+    .map(([k, t]) => `<button data-filtro="${k}" class="${filtro === k ? "activa" : ""}">${t}</button>`).join("");
+  $("panelLote").innerHTML = `
+    <div class="veredicto"><span class="chip ${r.estado === "terminado" ? "ok" : "rev"}">${estadoTxt}</span>
+      <span class="tiempo">${r.hechos} / ${r.total} imágenes</span>
+      <span style="color:var(--suave);font-size:12px;word-break:break-all">${esc(r.carpeta)}</span><span style="flex:1"></span>
+      ${enCurso ? '<button class="secundario chico" id="cancelar">Cancelar</button>' : ""}
+      ${r.excel ? `<a href="/api/lotes/${r.id}/excel"><button class="chico">Descargar Excel</button></a>` : ""}</div>
+    <div class="progreso"><div style="width:${pct}%"></div></div>
+    <div class="contadores">
+      <div class="contador"><b style="color:var(--ok)">${r.conteo.OK}</b><span>OK automático</span></div>
+      <div class="contador"><b style="color:var(--rev)">${r.conteo.REVISAR}</b><span>A revisar</span></div>
+      <div class="contador"><b style="color:var(--err)">${r.conteo.ERROR}</b><span>Con error</span></div>
+      <div class="contador"><b>${r.tiempo_promedio_s ?? "—"} s</b><span>Promedio por cheque</span></div>
+      <div class="contador"><b class="${r.tiempo_maximo_s > presupuesto ? "tiempo fuera" : ""}">${r.tiempo_maximo_s ?? "—"} s</b><span>Máximo (límite ${presupuesto} s)</span></div>
+      <div class="contador"><b>${enCurso ? mmss(r.segundos_restantes) : mmss(r.segundos_transcurridos)}</b><span>${enCurso ? "Restante aprox." : "Duración total"}</span></div>
+    </div>
+    ${acierto}
+    <div class="filtros">${botonesFiltro}</div>
+    <div class="tabla-scroll"><table><thead><tr><th>Archivo</th><th>Estado</th><th>Tiempo</th><th>Monto</th><th>Fecha</th><th>N.º cheque</th><th>A revisar / error</th>${r.con_verdad ? "<th>Aciertos</th>" : ""}</tr></thead>
+    <tbody>${filas || `<tr><td colspan="8" style="color:var(--suave)">${r.hechos ? "Ninguna imagen con este filtro" : "Procesando la primera imagen…"}</td></tr>`}</tbody></table></div>
+    <div id="detalleLote" hidden></div>`;
+  if ($("cancelar")) $("cancelar").onclick = () => fetch(`/api/lotes/${r.id}/cancelar`, {method: "POST"});
+  document.querySelectorAll("[data-filtro]").forEach(b => b.onclick = () => { filtro = b.dataset.filtro; pintarLote(); });
+  document.querySelectorAll("tr.clic").forEach(tr => tr.onclick = () => verDetalle(+tr.dataset.i));
+  if (elegida != null) pintarDetalle();
+}
+
+async function verDetalle(i) {
+  elegida = i;
+  pintarLote();
+  $("detalleLote").scrollIntoView({behavior: "smooth", block: "nearest"});
+  const clave = lote.id + "_" + i;
+  if (!imagenesDetalle[clave] && !lote.resultados[i].error) {
+    try {
+      const r = await (await fetch(`/api/lotes/${lote.id}/imagen/${i}`)).json();
+      imagenesDetalle[clave] = r.imagen_zonas;
+    } catch (e) {}
+    if (elegida === i) pintarDetalle();
+  }
+}
+
+function pintarDetalle() {
+  const f = lote.resultados[elegida], img = imagenesDetalle[lote.id + "_" + elegida], caja = $("detalleLote");
+  if (!f || !caja) return;
+  caja.hidden = false;
+  if (f.error) { caja.innerHTML = `<p class="error">${esc(f.archivo)}: ${esc(f.error)}</p>`; return; }
+  caja.innerHTML = `
+    <div class="veredicto"><b style="word-break:break-all">${esc(f.archivo)}</b>
+      <span class="estado ${f.estado === "OK" ? "ok" : "rev"}">${f.estado}</span><span class="tiempo">${f.tiempo_s.toFixed(2)} s</span></div>
+    <div class="leyenda">${Object.entries(f.tiempos_s || {}).filter(([k]) => k !== "total").map(([k, v]) =>
+      `<span><i style="background:${COLORES_PASO[k] || "#999"}"></i>${esc(NOMBRES_PASO[k] || k)} ${v.toFixed(3)} s</span>`).join("")}</div>
+    ${img ? `<img class="cheque" src="data:image/png;base64,${img}" alt="Cheque con las zonas leídas">${leyendaZonas}` : '<p class="nota">Cargando imagen…</p>'}
+    ${tablaCampos(f.detalle, f.comparacion, f.esperado || {})}
+    <details><summary>Lecturas crudas del OCR</summary><pre>${esc(JSON.stringify(f.lecturas_crudas, null, 2))}</pre></details>`;
+}
+
+iniciar();
+</script>
+</body>
+</html>

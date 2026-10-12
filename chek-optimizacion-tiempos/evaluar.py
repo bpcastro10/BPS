@@ -14,16 +14,12 @@ Para cada campo cuenta 4 resultados:
 import argparse
 import csv
 import json
-import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-
-from poc.analizador import Analizador
-from poc.comparar import CAMPOS, normalizar_valor as _norm
+from back.informe.excel import guardar_excel_evaluacion
+from back.motor.analizador import Analizador
+from back.dominio.comparar import CAMPOS, normalizar_valor as _norm
 
 RAIZ = Path(__file__).parent
 
@@ -43,8 +39,8 @@ def main():
     if a.modelo:
         config["modelo_lectura"] = a.modelo
     if a.dispositivo != "cpu":
-        from poc.hardware import detectar
-        from poc.paralelo import config_de_ejecucion
+        from back.motor.hardware import detectar
+        from back.motor.paralelo import config_de_ejecucion
         config = config_de_ejecucion(config, a.dispositivo, None, config.get("ejecucion", {}).get("precision_gpu", "float32"),
                                     detectar().onnx_cuda)
     an = Analizador(config, RAIZ)
@@ -80,26 +76,7 @@ def main():
     print(f"\nTiempo por cheque: promedio {sum(tiempos) / len(tiempos):.2f} s, máximo {max(tiempos):.2f} s "
           f"(presupuesto {config['presupuesto_segundos_por_lado']} s)")
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Cheques"
-    cols = ["archivo", "tiempo_s", "estado"] + [x for c in CAMPOS for x in (c, c + "_esperado", c + "_resultado")]
-    ws.append(cols)
-    colores = {"ok_auto": "C6EFCE", "ok_revisar": "FFEB9C", "error_revisar": "F8CBAD", "error_auto": "FF0000"}
-    for f in filas:
-        ws.append([f.get(c) for c in cols])
-        for i, c in enumerate(cols, 1):
-            if c.endswith("_resultado") and f.get(c):
-                ws.cell(ws.max_row, i).fill = PatternFill("solid", fgColor=colores[f[c]])
-    for celda in ws[1]:
-        celda.font = Font(bold=True)
-    ws2 = wb.create_sheet("Resumen")
-    ws2.append(["campo", "ok_auto", "ok_revisar", "error_revisar", "error_auto"])
-    for c, k in conteo.items():
-        ws2.append([c, k["ok_auto"], k["ok_revisar"], k["error_revisar"], k["error_auto"]])
-    salida = RAIZ / "resultados" / f"evaluacion_{an.lector.modelo}_{datetime.now():%Y%m%d_%H%M}.xlsx"
-    salida.parent.mkdir(exist_ok=True)
-    wb.save(salida)
+    salida = guardar_excel_evaluacion(filas, conteo, an.lector.modelo, RAIZ / "resultados")
     print(f"Excel: {salida}")
 
 

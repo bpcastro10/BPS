@@ -1,5 +1,6 @@
 {
   "presupuesto_segundos_por_lado": 60,
+  "motor_ocr": "rapidocr",
   "modelo_lectura": "v6_small",
   "anverso": {
     "micr_cheque_cuenta_banco": true,
@@ -11,6 +12,8 @@
   "lector_secundario": "v5_latin",
   "lectura_profunda": true,
   "lectura_profunda_modo": "dudosos",
+  "modelo_profundo": "glm-ocr",
+  "carpeta_modelo_profundo": "modelos/GLM-OCR",
   "servicio_firmas_src": "externos",
   "ejecucion": {
     "preguntar_al_iniciar": true,

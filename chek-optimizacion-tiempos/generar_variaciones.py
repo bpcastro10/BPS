@@ -11,7 +11,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from poc.plantilla import leer_gris
+from back.dominio.plantilla import leer_gris
 
 
 def mover(g, dx, dy, grados, escala=1.0):

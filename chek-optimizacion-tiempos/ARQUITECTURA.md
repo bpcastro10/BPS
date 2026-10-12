@@ -3,22 +3,59 @@
 Resumen de qué se usa y cómo interactúan las piezas al analizar el anverso de un cheque.
 Todo corre en **un solo proceso local**, en CPU o en GPU NVIDIA con la misma instalación: no usa nube ni servicios externos.
 
+## Estructura
+
+El proceso sigue siendo uno solo, en este equipo. El código queda partido para que el OCR,
+el modelo de letra y el Excel se puedan cambiar sin reescribir el análisis.
+
+```
+front/static/index.html     página (la sirve la API; no hay un segundo servidor)
+back/api/                   FastAPI: subir un cheque, lotes, devolver el Excel
+back/motor/                 orquesta un cheque o una carpeta (no sabe qué OCR ni qué modelo)
+back/dominio/               reglas, MICR, CTC, comparación con verdad.csv
+back/ocr/                   contrato + fábrica; hoy el motor es rapidocr/ (PP-OCR)
+back/ocr/preproceso.py      versiones de cada zona (limpia, gris, escala); vale para cualquier OCR
+back/modelo/                contrato + fábrica; hoy el modelo es glm_ocr.py
+back/informe/excel.py       los dos Excel (lote y evaluación)
+externos/firmas/            detector de firmas, igual que antes
+modelos/  plantillas/       pesos y la referencia MICR (no se movieron)
+```
+
+`servidor.py`, `analizar.py`, `evaluar.py` y `descargar_modelos.py` siguen en la raíz:
+son los mismos comandos de siempre y delegan en `back/`.
+
+## Cambiar el OCR o el modelo
+
+El analizador no importa RapidOCR ni GLM. Pide las piezas a una fábrica.
+
+**Otro OCR ya registrado:** en `config.json` cambia `"motor_ocr"`.
+**Otro modelo ya registrado:** cambia `"modelo_profundo"`. `"lectura_profunda": false` lo apaga.
+**Un OCR nuevo:** implementa `back/ocr/contrato.py`, agrega una línea en `MOTORES`
+de `back/ocr/fabrica.py` y pon esa clave en `"motor_ocr"`.
+**Un modelo nuevo:** implementa `back/modelo/contrato.py` (`estimar_segundos` y `leer`),
+agrega una línea en `MODELOS` de `back/modelo/fabrica.py` y pon esa clave en `"modelo_profundo"`.
+
+Las reglas siguen leyendo la variante `"glm-ocr"`: es el nombre estable del resultado,
+no el nombre del modelo. Un modelo nuevo no tiene que tocar `back/dominio/`.
+El Excel no sabe de imágenes: si cambia el informe, el cambio queda en `back/informe/excel.py`.
+
 ## Qué se usa
 
 | Pieza | Tecnología | Para qué | Tiempo aprox.* |
 |---|---|---|---|
-| Interfaz y API | FastAPI + uvicorn (`servidor.py`, `static/`) | Subir un cheque o una carpeta, ver resultados, Excel | — |
-| Orquestador | `poc/analizador.py` | Ejecuta los pasos, controla el presupuesto de tiempo, arma el JSON | — |
-| Localizador de campos | **PP-OCRv6 detección "small" + reconocimiento** (RapidOCR / ONNX) — `poc/localizador.py` | Encuentra todas las cajas de texto, reconoce las etiquetas impresas ("Páguese a", "La suma de", "US$"...) y calcula la zona de cada campo | ~4,5–9 s |
-| Clasificador por contenido | Reglas en Python — `poc/clasificador.py` | Reubica campos según lo que dicen (fecha, palabras de número, nombres) | <0,1 s |
-| Detector de firmas | **YOLOS-tiny** (transformers / torch) — `externos/firmas/` | Borra la firma de los recortes; si una "firma" tapa 2+ campos, marca la letra como ilegible | ~1,5 s |
-| Lectura profunda | **GLM-OCR 0,9 B** (VLM, transformers / torch) — `poc/profundo.py` | Lee la letra manuscrita en UNA pasada con las tiras apiladas. Con `lectura_profunda_modo: "dudosos"` (por omisión) solo lee las zonas que el camino rápido dejó en revisión; `"siempre"` las lee todas antes | ~35 s (lo más caro) |
-| Lector rápido | **PP-OCRv6 small** reconocimiento (ONNX) — `poc/lector.py` | Lee cada zona en 3 versiones (limpia x3, gris x3, limpia x2) y da la matriz de probabilidades | ~0,5 s por zona |
-| Lector secundario | **PP-OCRv5 latin** (ONNX) | Otra opinión en zonas manuscritas (suma candidatos) | ~0,2 s por zona |
-| Lector MICR | Plantillas E-13B con OpenCV — `poc/micr.py` | Lee la banda MICR (cheque, ruta, cuenta) carácter por carácter | milisegundos |
-| Verificador CTC | Viterbi sobre la matriz de PP-OCR — `poc/ctc.py` | Puntúa cada candidato ("cuatrocientos setenta y cinco") **contra la imagen** | ~1 s en total |
-| Reglas por campo | `poc/campos.py`, `parsers.py`, `reglas.py`, `nombres.py` | Genera candidatos, cruza cifras con letras, valida fechas, ciudades y nombres; decide OK o REVISAR | <0,5 s |
-| Lotes | `poc/lotes.py` + openpyxl | Carpeta en segundo plano, acierto vs `verdad.csv`, Excel en `resultados/` | — |
+| Interfaz | `front/static/index.html` | Subir un cheque o una carpeta, ver resultados, Excel | — |
+| API | FastAPI (`back/api/servidor.py`, arranque `servidor.py`) | Misma API local en el puerto 8300 | — |
+| Orquestador | `back/motor/analizador.py` | Ejecuta los pasos, controla el presupuesto de tiempo, arma el JSON | — |
+| Localizador de campos | **PP-OCRv6** vía `back/ocr/rapidocr/` | Encuentra cajas, etiquetas y la zona de cada campo | ~4,5–9 s |
+| Clasificador por contenido | `back/dominio/clasificador.py` | Reubica campos según lo que dicen | <0,1 s |
+| Detector de firmas | **YOLOS-tiny** — `externos/firmas/` | Borra la firma de los recortes; si tapa 2+ campos, marca ilegible | ~1,5 s |
+| Lectura profunda | **GLM-OCR** vía `back/modelo/glm_ocr.py` | Lee la letra manuscrita. `"dudosos"` solo revisa lo que el camino rápido dejó pendiente | ~35 s |
+| Lector rápido | **PP-OCRv6 small** — `back/ocr/rapidocr/lector.py` | Tres versiones de cada zona y la matriz de probabilidades | ~0,5 s por zona |
+| Lector secundario | **PP-OCRv5 latin** | Otra opinión en zonas manuscritas | ~0,2 s por zona |
+| Lector MICR | `back/dominio/micr.py` | Banda MICR carácter por carácter | milisegundos |
+| Verificador CTC | `back/dominio/ctc.py` | Puntúa cada candidato contra la imagen | ~1 s en total |
+| Reglas por campo | `back/dominio/` (`campos`, `parsers`, `reglas`, `nombres`) | Candidatos, cruce cifras/letras, fechas, ciudades, nombres | <0,5 s |
+| Lotes y Excel | `back/motor/lotes.py` + `back/informe/excel.py` | Carpeta en segundo plano, acierto vs `verdad.csv`, Excel en `resultados/` | — |
 
 \* Medido el 2026-10-08 con `muestras/pichincha_0001.tif` en una PC de 3 núcleos. Total: ~50 s por cheque. Sin GLM: ~10 s.
 
@@ -113,7 +150,7 @@ sequenceDiagram
   `lectura_profunda` activa GLM.
 - **Lotes:** `POST /api/lotes` procesa una carpeta con el mismo motor que el análisis individual y genera
   el Excel (en el orden de la carpeta). Con 1, de a un cheque (candado); con N, N a la vez sobre los mismos modelos.
-- **Ejecución** (`poc/hardware.py`, `poc/arranque.py`, `poc/paralelo.py`): al levantar se detecta CPU, RAM y
+- **Ejecución** (`back/motor/hardware.py`, `arranque.py`, `paralelo.py`): al levantar se detecta CPU, RAM y
   GPU, se pregunta CPU/GPU y cuántos cheques a la vez. Se crea UN `Analizador` (modelos cargados una vez) y
   `Motor` deja que hasta N hilos lo usen al mismo tiempo (semáforo; con N = 1 es el candado de siempre).
   Todo lo de cada cheque es local a la llamada y `ultima_imagen` es por hilo. Con N > 1, torch reparte los

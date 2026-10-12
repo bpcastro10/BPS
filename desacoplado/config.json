@@ -1,0 +1,25 @@
+{
+  "presupuesto_segundos_por_lado": 60,
+  "motor_ocr": "rapidocr",
+  "modelo_lectura": "v6_small",
+  "anverso": {
+    "micr_cheque_cuenta_banco": true,
+    "montos": true,
+    "ciudad_fecha": true,
+    "beneficiario": true
+  },
+  "detector": "small",
+  "lector_secundario": "v5_latin",
+  "lectura_profunda": true,
+  "lectura_profunda_modo": "dudosos",
+  "modelo_profundo": "glm-ocr",
+  "carpeta_modelo_profundo": "modelos/GLM-OCR",
+  "servicio_firmas_src": "externos",
+  "ejecucion": {
+    "preguntar_al_iniciar": true,
+    "dispositivo": "cpu",
+    "paralelos": 1,
+    "gpu": null,
+    "precision_gpu": "float32"
+  }
+}

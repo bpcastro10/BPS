@@ -33,7 +33,7 @@ El límite de tiempo por cheque se mantiene: si por la carga un paso no alcanza,
 Sin preguntas: `servidor.py --dispositivo gpu --paralelos 3 [--gpu 0]`, o `--sin-preguntar` para usar
 `config.json` → `ejecucion` (`dispositivo`, `paralelos`, `gpu`, `precision_gpu`: `float32` por omisión,
 `float16` usa la mitad de VRAM pero puede cambiar algo la lectura). Diagnóstico solo:
-`.venv\Scripts\python -m poc.hardware`. `analizar.py` y `evaluar.py` aceptan `--dispositivo cuda:0`.
+`.venv\Scripts\python -m back.motor.hardware`. `analizar.py` y `evaluar.py` aceptan `--dispositivo cuda:0`.
 
 CPU y GPU NVIDIA usan los mismos paquetes (`torch` CUDA 12.6 y `onnxruntime-gpu` en `requirements.txt`).
 Esa rueda usa la GPU si el driver admite CUDA 12.6 o superior (también un driver 13).
@@ -92,9 +92,9 @@ Para medir con cheques nuevos: copiarlos a una carpeta con un `verdad.csv` (mism
 
 | Campo | Fuente principal | Validación cruzada |
 |---|---|---|
-| N.º cheque, cuenta, MICR | Lector E-13B por plantillas (`poc/micr.py`) | Cuenta y n.º impresos arriba. Si el lector duda, OCR general y siempre "revisar" |
+| N.º cheque, cuenta, MICR | Lector E-13B por plantillas (`back/dominio/micr.py`) | Cuenta y n.º impresos arriba. Si el lector duda, OCR general y siempre "revisar" |
 | Banco | Plantilla | Código `10` al inicio de la ruta MICR |
-| Monto | Candidatos (cifras + letras + variantes de 1 dígito) puntuados **sobre la imagen** (`poc/ctc.py`) | Debe encajar en la zona de cifras **y** en la de letras. Si ninguna zona lo leyó sola, nunca es automático |
+| Monto | Candidatos puntuados sobre la imagen (`back/dominio/ctc.py`) | Debe encajar en la zona de cifras y en la de letras. Si ninguna zona lo leyó sola, nunca es automático |
 | Fecha | Lecturas + variantes de 1 dígito verificadas en la imagen | Fecha válida, plausible, aviso de posdatado |
 | Ciudad | Lista de ciudades de Ecuador | Verificada en la imagen |
 | Beneficiario | Lectura directa (pendiente) | — |
@@ -105,14 +105,18 @@ opción; si no, `revisar: true`. Imágenes con menos resolución que la referenc
 ## Archivos
 
 ```
-poc/plantilla.py   zonas del formato + alineación con la referencia (ORB)
-poc/lector.py      PP-OCR (RapidOCR/ONNX), solo reconocimiento, varias versiones por zona
-poc/ctc.py         puntaje de un texto candidato sobre la imagen (Viterbi CTC)
-poc/micr.py        lector MICR E-13B por plantillas
-poc/campos.py      reglas y decisiones por campo
-poc/parsers.py, poc/reglas.py   copiados de AzurePrueba (montos en letras, fechas)
-modelos/GLM-OCR    descargado para una futura 2.ª pasada en segundo plano (no se usa aún)
+front/static/index.html          página de prueba
+back/api/servidor.py             API local
+back/motor/                      análisis de un cheque y de una carpeta
+back/dominio/                    reglas, MICR, CTC, fechas y nombres
+back/ocr/                        contrato del OCR; el motor actual está en rapidocr/
+back/modelo/glm_ocr.py           modelo de letra manuscrita (GLM-OCR)
+back/informe/excel.py            Excel de lote y de evaluación
+config.json                      motor_ocr, modelo_profundo y el resto de la selección
 ```
+
+Para cambiar el OCR o el modelo sin reescribir el análisis, ver `ARQUITECTURA.md`
+(secciones «Estructura» y «Cambiar el OCR o el modelo»).
 
 ## Limitaciones conocidas (al 2026-10-07)
 
