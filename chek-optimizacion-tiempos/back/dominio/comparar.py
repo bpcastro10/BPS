@@ -1,5 +1,3 @@
-"""Comparación de resultados contra las respuestas correctas (verdad.csv)."""
-
 import re
 
 from back.dominio.parsers import letras_a_numero, normalizar
@@ -7,9 +5,7 @@ from back.dominio.parsers import letras_a_numero, normalizar
 CAMPOS = ["numero_cheque", "cuenta", "banco", "micr", "monto_numeros", "monto_letras", "ciudad", "fecha",
           "beneficiario"]
 
-
 def normalizar_valor(campo, valor):
-    """Forma comparable de un valor (montos como número, números sin guiones, texto sin tildes)."""
     if valor in (None, ""):
         return ""
     v = str(valor).strip().lower()
@@ -25,9 +21,7 @@ def normalizar_valor(campo, valor):
         return re.sub(r"\D", "", v)
     return normalizar(v)
 
-
 def clasificar(campo, detalle, esperado):
-    """ok_auto / ok_revisar / error_revisar / error_auto, o None si no hay respuesta correcta."""
     if not esperado:
         return None
     correcto = normalizar_valor(campo, detalle["valor"]) == normalizar_valor(campo, esperado)

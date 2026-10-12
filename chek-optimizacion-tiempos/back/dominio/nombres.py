@@ -1,9 +1,3 @@
-"""Nombres y apellidos frecuentes en Ecuador, para corregir el beneficiario palabra por palabra.
-
-Lista inicial armada a mano (no exhaustiva). Lo ideal es reemplazarla o ampliarla con los
-beneficiarios reales de su base de clientes/proveedores: con una lista propia el acierto sube mucho.
-"""
-
 NOMBRES = """
 Juan José Luis Carlos Jorge Miguel Manuel Pedro Francisco Antonio Javier Diego Daniel David Andrés
 Fernando Ricardo Roberto Eduardo Sergio Pablo Mario Marco Marcos Víctor Raúl Héctor Óscar Alberto

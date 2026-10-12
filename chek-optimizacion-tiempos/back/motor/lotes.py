@@ -1,38 +1,26 @@
-"""Análisis de todas las imágenes de una carpeta, en segundo plano, con avance consultable.
-
-Los lotes se procesan de a uno y comparten el motor con el análisis individual (back/motor/paralelo.py).
-Con paralelos = 1 se analiza un cheque a la vez (como siempre); con N, N cheques del lote a la vez
-sobre los mismos modelos ya cargados.
-Los resultados quedan en memoria mientras el servidor esté encendido. Al terminar se guarda un Excel
-en resultados/ (en el orden de la carpeta).
-"""
-
 import csv
 import threading
 import time
 import uuid
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 
 from back.dominio.comparar import CAMPOS, clasificar
 from back.informe.excel import guardar_excel_lote
+from back.motor.memoria import Prefetch, presupuesto_ram
 
 EXTENSIONES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
-
 
 def listar_imagenes(carpeta, subcarpetas):
     patron = carpeta.rglob("*") if subcarpetas else carpeta.glob("*")
     return sorted(p for p in patron if p.is_file() and p.suffix.lower() in EXTENSIONES)
 
-
 def _leer_verdad(carpeta):
-    """Respuestas correctas si la carpeta trae verdad.csv (clave: nombre del archivo)."""
     ruta = carpeta / "verdad.csv"
     if not ruta.exists():
         return {}
     with open(ruta, encoding="utf-8-sig") as f:
         return {r["archivo"]: r for r in csv.DictReader(f)}
-
 
 class Lote:
     def __init__(self, carpeta, imagenes, seleccion, verdad):
@@ -41,8 +29,8 @@ class Lote:
         self.imagenes = imagenes
         self.seleccion = seleccion
         self.verdad = verdad
-        self.resultados = []        # resumen por imagen (sin la imagen)
-        self.estado = "en_cola"     # en_cola, procesando, terminado, cancelado
+        self.resultados = []
+        self.estado = "en_cola"
         self.cancelar = False
         self.inicio = None
         self.fin = None
@@ -76,14 +64,14 @@ class Lote:
             "resultados": self.resultados[desde:], "desde": desde,
         }
 
-
 class GestorLotes:
     def __init__(self, motor, carpeta_resultados):
-        self.motor = motor          # back.motor.paralelo.Motor (modelos cargados una vez)
+        self.motor = motor
         self.salida = Path(carpeta_resultados)
         self.lotes = {}
         self._cola = []
         self._hay_trabajo = threading.Event()
+        self._resultados = threading.Lock()
         threading.Thread(target=self._trabajar, daemon=True).start()
 
     def crear(self, ruta, subcarpetas, seleccion):
@@ -110,35 +98,50 @@ class GestorLotes:
         lote.estado, lote.inicio = "procesando", time.time()
         n = max(1, getattr(self.motor, "paralelos", 1))
         cancelado = False
-        if n == 1:   # modo original: de a un cheque, en orden
+        if n == 1:
             for img in lote.imagenes:
                 if lote.cancelar:
                     cancelado = True
                     break
                 self._uno(lote, img)
-        else:        # N análisis a la vez con los mismos modelos (los resultados llegan según terminan)
-            with ThreadPoolExecutor(max_workers=n, thread_name_prefix="lote") as ex:
-                pendientes = set()
-                for img in lote.imagenes:
-                    if lote.cancelar:
-                        cancelado = True
-                        break
-                    if len(pendientes) >= n:
-                        _, pendientes = wait(pendientes, return_when=FIRST_COMPLETED)
-                    pendientes.add(ex.submit(self._uno, lote, img))
-                wait(pendientes)
+        else:
+            max_bytes, max_imagenes = presupuesto_ram(n)
+            print(f"Paralelo: {n} a la vez, cola en RAM de hasta {max_bytes / 1024 ** 2:.0f} MB "
+                  f"({max_imagenes} imágenes). La lectura no cambia de precisión.", flush=True)
+            prefetch = Prefetch(lote.imagenes, max_bytes, max_imagenes)
+            try:
+                with ThreadPoolExecutor(max_workers=n, thread_name_prefix="lote") as ex:
+                    futuros = [ex.submit(self._desde_ram, lote, prefetch) for _ in range(n)]
+                    wait(futuros)
+            finally:
+                prefetch.cerrar()
+            cancelado = lote.cancelar
         lote.estado = "cancelado" if cancelado else "terminado"
         lote.fin = time.time()
         try:
             lote.excel = self._excel(lote)
-        except Exception:   # noqa: BLE001 - el lote vale aunque falle el Excel
+        except Exception:
             lote.excel = None
 
-    def _uno(self, lote, img):
+    def _desde_ram(self, lote, prefetch):
+        while not lote.cancelar:
+            item = prefetch.siguiente()
+            if item is None:
+                return
+            img, precargada = item
+            self._uno(lote, img, precargada)
+
+    def _uno(self, lote, img, precargada=None):
         relativo = str(img.relative_to(lote.carpeta))
         fila = {"archivo": relativo}
+        if isinstance(precargada, Exception):
+            fila.update(estado="ERROR", tiempo_s=None, error=str(precargada))
+            with self._resultados:
+                lote.resultados.append(fila)
+            return
         try:
-            r, _, _ = self.motor.analizar(img, lote.seleccion)
+            entrada = img if precargada is None else precargada
+            r, _, _ = self.motor.analizar(entrada, lote.seleccion)
             fila.update(estado=r["estado"], tiempo_s=r["tiempos_s"]["total"], tiempos_s=r["tiempos_s"], campos=r["campos"],
                         detalle=r["detalle"], campos_a_revisar=r["campos_a_revisar"],
                         dentro_de_presupuesto=r["dentro_de_presupuesto"],
@@ -149,9 +152,10 @@ class GestorLotes:
                 fila["comparacion"] = {c: t for c in CAMPOS if c in r["detalle"]
                                        if (t := clasificar(c, r["detalle"][c], esperado.get(c)))}
                 fila["esperado"] = {c: esperado.get(c) for c in fila["comparacion"]}
-        except Exception as e:   # una imagen mala no detiene el lote
+        except Exception as e:
             fila.update(estado="ERROR", tiempo_s=None, error=str(e))
-        lote.resultados.append(fila)
+        with self._resultados:
+            lote.resultados.append(fila)
 
     def _excel(self, lote):
         return guardar_excel_lote(lote, self.salida)

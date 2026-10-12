@@ -1,9 +1,3 @@
-"""Crea variaciones de un escaneo real (corrido, inclinado, ruido, desenfoque, contraste, JPEG)
-para medir la estabilidad mientras no haya más cheques reales. Copia las respuestas correctas.
-
-Uso: .venv\\Scripts\\python generar_variaciones.py muestras\\pichincha_0001.tif muestras_variaciones
-"""
-
 import csv
 import sys
 from pathlib import Path
@@ -13,17 +7,14 @@ import numpy as np
 
 from back.dominio.plantilla import leer_gris
 
-
 def mover(g, dx, dy, grados, escala=1.0):
     h, w = g.shape
     M = cv2.getRotationMatrix2D((w / 2, h / 2), grados, escala)
     M[:, 2] += (dx, dy)
     return cv2.warpAffine(g, M, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=235)
 
-
 def jpeg(g, calidad):
     return cv2.imdecode(cv2.imencode(".jpg", g, [cv2.IMWRITE_JPEG_QUALITY, calidad])[1], cv2.IMREAD_GRAYSCALE)
-
 
 VARIACIONES = {
     "corrido": lambda g: mover(g, 9, -6, 0),
@@ -37,7 +28,6 @@ VARIACIONES = {
     "oscuro": lambda g: np.clip(g.astype(int) - 45, 0, 255).astype(np.uint8),
     "todo_junto": lambda g: jpeg(cv2.GaussianBlur(mover(g, 6, 4, -1.2), (3, 3), 0.7), 45),
 }
-
 
 def main():
     origen, destino = Path(sys.argv[1]), Path(sys.argv[2])
@@ -55,7 +45,6 @@ def main():
         w.writeheader()
         w.writerows(filas)
     print(f"{len(filas)} variaciones en {destino}")
-
 
 if __name__ == "__main__":
     main()

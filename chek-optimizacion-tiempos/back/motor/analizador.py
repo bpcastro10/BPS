@@ -1,10 +1,3 @@
-"""Análisis de un lado del cheque según la lista de selección, midiendo el tiempo de cada paso.
-
-Los campos se BUSCAN en cada cheque, no se toman de una plantilla fija:
-así sirve para cualquier formato que traiga las etiquetas impresas habituales.
-El OCR y el modelo de letra se piden a sus fábricas (back/ocr, back/modelo).
-"""
-
 import threading
 import time
 from pathlib import Path
@@ -21,38 +14,33 @@ from back.modelo.fabrica import crear_modelo_profundo
 from back.ocr.fabrica import crear_ocr
 from back.ocr.preproceso import VARIANTES, proporcion_tinta, quitar_impreso_a_la_izquierda
 
-# Si el segundo renglón del monto en letras tiene menos tinta que esto, está vacío
 TINTA_MINIMA_RENGLON = 0.004
-# Ancho mínimo de la imagen original (por debajo, los dígitos impresos ya se confunden)
 ANCHO_MINIMO_PX = 0.85 * ANCHO_TRABAJO
-# Versiones de cada zona que se leen y se usan para verificar candidatos
 VARIANTES_TEXTO = ("limpio_x3", "gris_x3", "limpio_x2")
 VARIANTES_VERIFICACION = ("limpio_x3", "gris_x3")
 
-# Tiempo que puede tomar cada paso en el peor caso medido (3 núcleos); se usa para no pasarse
 COSTO_ESTIMADO_S = {"micr_cheque_cuenta_banco": 1.5, "montos": 4.0, "ciudad_fecha": 1.0, "beneficiario": 1.5}
-# Zonas manuscritas donde se suma el segundo lector
 ZONAS_SEGUNDO_LECTOR = {"monto_letras", "monto_numeros", "ciudad_fecha", "beneficiario"}
 CAMPOS_DEL_PASO = {"micr_cheque_cuenta_banco": ["micr", "numero_cheque", "cuenta", "banco"],
                    "montos": ["monto_numeros", "monto_letras"], "ciudad_fecha": ["ciudad", "fecha"],
                    "beneficiario": ["beneficiario"]}
-# Zona que necesita cada paso (si el localizador no la encontró, sus campos van a revisión)
 ZONA_DEL_PASO = {"montos": ["monto_letras", "monto_numeros"], "ciudad_fecha": ["ciudad_fecha"],
                  "beneficiario": ["beneficiario"]}
-# Zona que lee GLM para cada paso, en el orden en que se apilan las tiras
 ZONA_GLM_DEL_PASO = {"beneficiario": "beneficiario", "montos": "monto_letras", "ciudad_fecha": "ciudad_fecha"}
 
+def _nombre_archivo(ruta):
+    if isinstance(ruta, (bytes, bytearray)):
+        return "(subida)"
+    if isinstance(ruta, np.ndarray):
+        return "(memoria)"
+    return str(ruta)
 
 def _unir_renglones(a, b):
-    """Pone el segundo renglón a continuación del primero (misma altura) para leerlos como uno."""
     alto = a.shape[0]
     b = cv2.resize(b, (max(1, round(b.shape[1] * alto / b.shape[0])), alto))
     return np.hstack([a, b])
 
-
 class Analizador:
-    """Un juego de modelos. analizar() se puede llamar desde varios hilos a la vez (ver back/motor/paralelo.py):
-    todo lo de cada cheque es local a la llamada, y ultima_imagen es por hilo."""
 
     @property
     def ultima_imagen(self):
@@ -66,29 +54,23 @@ class Analizador:
         self._hilo = threading.local()
         t = time.perf_counter()
         self.config = config
-        # Dónde corre este proceso (lo arma back/motor/arranque.py). Sin la sección: CPU con los valores de siempre
         ej = config.get("ejecucion") or {}
         self.dispositivo = ej.get("dispositivo_proceso", "cpu")
         hilos_torch = ej.get("hilos_torch")
-        if hilos_torch:   # varios análisis simultáneos: torch reparte los núcleos entre ellos, sin sobresuscribir
+        if hilos_torch:
             try:
                 import torch
                 torch.set_num_threads(int(hilos_torch))
-            except ImportError:   # sin torch no hay modelos torch que repartir
+            except ImportError:
                 pass
-        # ONNX y OpenCV quedan como siempre: cada sesión tiene UN grupo de hilos que comparten todas las llamadas
         gpu_onnx = int(self.dispositivo.split(":")[1]) if self.dispositivo.startswith("cuda") and ej.get("onnx_gpu") else None
         if gpu_onnx is not None:
-            # Antes de abrir sesiones ONNX: las DLL de CUDA viven en la rueda de torch
             from back.motor.hardware import preparar_runtime_gpu
             preparar_runtime_gpu()
         ocr = crear_ocr(config, gpu_onnx)
         self.localizador = ocr.localizador
         self.lector = ocr.lector
-        # Segundo lector con otro modelo del mismo OCR: comete errores distintos, suma candidatos
         self.lector2 = ocr.lector_secundario
-        # Detector del servicio de firmas (mismo código y modelo de PR1/ServicioFirmas): ubica la firma para
-        # borrarla de los recortes y detecta letra tan mala que parece firma (ilegible)
         self.firmas = None
         if config.get("servicio_firmas_src"):
             import sys
@@ -96,18 +78,14 @@ class Analizador:
             sys.path.insert(0, str(ruta if ruta.is_absolute() else Path(raiz) / ruta))
             from firmas.detector import DetectorFirmas
             self.firmas = DetectorFirmas(dispositivo=self.dispositivo)
-        # Lectura profunda (hoy GLM-OCR). Otro modelo entra por back/modelo/fabrica.py
         self.profundo = crear_modelo_profundo(config, raiz, self.dispositivo, ej.get("precision_gpu", "float32"))
         self.puntuador = Puntuador(self.lector.caracteres)
-        # Plantillas de la fuente MICR E-13B (la misma en todos los bancos), sacadas de un escaneo conocido
         ref = Plantilla(PICHINCHA_V1, raiz)
         self.micr = LectorMICR()
         if not self.micr.agregar(ref.recortar(ref.ref, "micr"), PICHINCHA_V1["micr_referencia"]):
             raise ValueError("No se pudieron crear las plantillas MICR desde la referencia")
-        # Calentamiento: la primera inferencia de ONNX es más lenta; se hace al arrancar, no con un cheque
         r = self.analizar(Path(raiz) / PICHINCHA_V1["referencia"])
         if self.profundo and "lectura_profunda" not in r["tiempos_s"]:
-            # El cheque de referencia no necesitó GLM: se calienta con un renglón corto (pocos tokens)
             self.profundo.leer([("beneficiario", ref.recortar(ref.ref, "beneficiario"))])
         self.segundos_carga = round(time.perf_counter() - t, 2)
 
@@ -119,8 +97,6 @@ class Analizador:
         t_total = time.perf_counter()
 
         def paso(nombre, fn):
-            # Control duro de tiempo: si el paso podría pasarse del presupuesto, no se ejecuta
-            # y sus campos quedan para revisión (mejor un campo pendiente que un cheque lento)
             if time.perf_counter() - t_total + COSTO_ESTIMADO_S.get(nombre, 1.0) > presupuesto:
                 omitidos.append(nombre)
                 tiempos[nombre] = 0.0
@@ -134,14 +110,12 @@ class Analizador:
             tiempos[nombre] = round(time.perf_counter() - t, 3)
             hechos[nombre] = fn
 
-        hechos = {}       # paso -> función, para volver a decidirlo con la lectura de GLM
-        leidas = {}       # zona -> (lecturas rápidas, matrices): no se relee al volver a decidir
-        profundo = {}     # zona -> texto de GLM
+        hechos = {}
+        leidas = {}
+        profundo = {}
 
         def leer(nombre, recorte, verificar=True):
             if nombre not in leidas:
-                # Cada versión de la zona se prepara una vez y pasa una sola vez por cada modelo:
-                # el texto y la matriz para verificar salen de la misma pasada
                 imagenes = {v: VARIANTES[v](recorte) for v in VARIANTES_TEXTO}
                 lecturas, P = self.lector.leer_con_probabilidades(imagenes, VARIANTES_TEXTO,
                                                                   VARIANTES_VERIFICACION if verificar else ())
@@ -149,15 +123,13 @@ class Analizador:
                     lecturas += self.lector2.leer_con_probabilidades(imagenes, VARIANTES_VERIFICACION)[0]
                 leidas[nombre] = (lecturas, [Matriz(P[v]) for v in VARIANTES_VERIFICACION] if verificar else [])
             lecturas, mats = leidas[nombre]
-            if nombre in profundo:   # la lectura del modelo va primero: es la base para el beneficiario
-                # "glm-ocr" es el nombre estable que ya leen las reglas. No depende de qué modelo sea.
+            if nombre in profundo:
                 lecturas = [{"variante": "glm-ocr", "texto": profundo[nombre], "confianza": 0.99}] + lecturas
             crudo[nombre] = [l["texto"] for l in lecturas]
             return lecturas, mats
 
-        # 1. Abrir y buscar los campos
         t = time.perf_counter()
-        original = leer_gris(ruta)
+        original = ruta if isinstance(ruta, np.ndarray) else leer_gris(ruta)
         tiempos["abrir_imagen"] = round(time.perf_counter() - t, 3)
         t = time.perf_counter()
         img = self.localizador.preparar(original)
@@ -166,7 +138,6 @@ class Analizador:
         calidad_ok = original.shape[1] >= ANCHO_MINIMO_PX
         tiempos["buscar_campos"] = round(time.perf_counter() - t, 3)
 
-        # Copia del cheque sin el texto impreso: los recortes manuscritos no arrastran etiquetas ni leyendas
         manuscrito = img.copy()
         fondo = int(np.percentile(img, 90))
         for x0, y0, x1, y1 in info.pop("impresos", []):
@@ -177,7 +148,6 @@ class Analizador:
             x0, y0, x1, y1 = zonas[z]
             return (img if z in IMPRESAS else manuscrito)[y0:y1, x0:x1]
 
-        # Firmas: se borran de los recortes; si una "firma" cubre 2+ campos manuscritos, esa letra es ilegible
         ilegibles = set()
         if self.firmas:
             from PIL import Image
@@ -194,9 +164,9 @@ class Analizador:
                         if ix * iy > 0.3 * (x1 - x0) * (y1 - y0):
                             cubiertas.append(z)
                 if len(cubiertas) >= 2:
-                    ilegibles.update(cubiertas)   # no es una firma: es letra que parece firma
+                    ilegibles.update(cubiertas)
                 else:
-                    manuscrito[max(0, f.y1):f.y2, max(0, f.x1):f.x2] = fondo   # firma real: fuera del recorte
+                    manuscrito[max(0, f.y1):f.y2, max(0, f.x1):f.x2] = fondo
             tiempos["firmas"] = round(time.perf_counter() - t, 3)
 
         def letras_unidas():
@@ -206,7 +176,6 @@ class Analizador:
             return letras
 
         def lectura_profunda(nombres, resto):
-            """GLM sobre las zonas `nombres`, en UNA pasada, si alcanza el tiempo (resto = lo que falta después)."""
             if len(ilegibles) >= 2:
                 crudo["glm_ocr"] = "omitida: letra ilegible (el detector de firmas la confunde con firmas)"
                 return
@@ -225,14 +194,11 @@ class Analizador:
             profundo.update(leido)
             crudo["glm_ocr"] = profundo
 
-        # Lectura profunda: "siempre" = todas las zonas manuscritas antes de decidir (como al inicio);
-        # "dudosos" (por omisión) = solo las zonas cuyos campos el camino rápido dejó en revisión (ver abajo)
         modo_profundo = self.config.get("lectura_profunda_modo", "dudosos")
         if self.profundo and modo_profundo == "siempre":
             resto = sum(COSTO_ESTIMADO_S[k] for k in CAMPOS_DEL_PASO if sel.get(k)) * 0.6
             lectura_profunda([z for paso_, z in ZONA_GLM_DEL_PASO.items() if sel.get(paso_)], resto)
 
-        # 2. Datos impresos: MICR (si hay), n.º de cheque, cuenta y banco
         if sel.get("micr_cheque_cuenta_banco"):
             def _impresos():
                 lect, mats = {}, {}
@@ -243,10 +209,10 @@ class Analizador:
                     lectura_micr = self.micr.leer(zona("micr"))
                     crudo["micr_plantillas"] = lectura_micr["texto"]
                     r = campos.datos_impresos(lect, mats, self.puntuador, lectura_micr)
-                    if r is None:   # la MICR tiene caracteres dudosos: se recurre al OCR general
+                    if r is None:
                         lect["micr"], mats["micr"] = leer("micr", zona("micr"))
                         r = campos.datos_impresos(lect, mats, self.puntuador)
-                        for campo in r:   # si las plantillas dudaron, la imagen está mala: nada automático
+                        for campo in r:
                             campo["revisar"] = True
                             campo["nota"] += "; MICR con caracteres dudosos en el lector E-13B"
                     micr, res["numero_cheque"], res["cuenta"] = r
@@ -256,12 +222,11 @@ class Analizador:
                 res["banco"] = campos.banco_encontrado(info["banco_impreso"], micr)
             paso("micr_cheque_cuenta_banco", _impresos)
 
-        # 3. Montos (cifras y letras se verifican entre sí sobre la imagen)
         if sel.get("montos"):
             def _montos():
                 lect_let, mats_let = leer("monto_letras", letras_unidas())
                 cifras = zona("monto_numeros")
-                if info.get("recortar_prefijo_monto"):   # sin etiqueta US$: quitar lo impreso antes del monto
+                if info.get("recortar_prefijo_monto"):
                     cifras, corte = quitar_impreso_a_la_izquierda(cifras)
                     crudo["monto_numeros_corte_px"] = int(corte)
                 lect_num, mats_num = leer("monto_numeros", cifras)
@@ -282,8 +247,6 @@ class Analizador:
                 res["beneficiario"] = campos.beneficiario(lect, mats, self.puntuador)
             paso("beneficiario", _benef)
 
-        # Lectura profunda solo donde el camino rápido dudó; esos pasos se vuelven a decidir con el texto
-        # de GLM sumado a las lecturas ya hechas (no se relee la imagen)
         if self.profundo and modo_profundo == "dudosos":
             dudosos = [p for p in ZONA_GLM_DEL_PASO if p in hechos
                        and any(res.get(c, {}).get("revisar") for c in CAMPOS_DEL_PASO[p])]
@@ -297,7 +260,6 @@ class Analizador:
             elif any(p in hechos for p in ZONA_GLM_DEL_PASO):
                 crudo["glm_ocr"] = "no hizo falta: el camino rápido resolvió los campos manuscritos"
 
-        # Letra que parece firma: sus campos siempre a revisión
         CAMPOS_DE_ZONA = {"beneficiario": ["beneficiario"], "monto_letras": ["monto_letras", "monto_numeros"],
                           "monto_numeros": ["monto_numeros", "monto_letras"], "ciudad_fecha": ["ciudad", "fecha"]}
         for z in ilegibles:
@@ -305,7 +267,6 @@ class Analizador:
                 if c in res:
                     res[c]["revisar"] = True
                     res[c]["nota"] += "; letra ilegible (el detector de firmas la confunde con una firma)"
-        # 4. Campos que no se pudieron leer: siempre a revisión, con el motivo
         for nombre in omitidos:
             for c in CAMPOS_DEL_PASO[nombre]:
                 res[c] = campos._campo(None, 0, "omitido: no alcanzó el tiempo por lado", revisar=True)
@@ -320,7 +281,7 @@ class Analizador:
         a_revisar = [k for k, v in res.items() if v["revisar"]]
         H, W = img.shape
         return {
-            "archivo": "(subida)" if isinstance(ruta, (bytes, bytearray)) else str(ruta),
+            "archivo": _nombre_archivo(ruta),
             "estado": "OK" if not a_revisar else "REVISAR",
             "campos": {k: v["valor"] for k, v in res.items()},
             "detalle": res,

@@ -1,16 +1,3 @@
-"""Interfaz web local para probar la PoC: http://127.0.0.1:8300
-
-Solo escucha en este equipo. Las imágenes se procesan en memoria y no se guardan.
-La página está en front/static. El análisis vive en back/motor.
-
-Al levantar pregunta si usar CPU o GPU (si se detectó alguna) y cuántos procesos a la vez,
-entre el mínimo y el máximo que aguanta el equipo. Si no se escribe nada, queda el recomendado. Los modelos se cargan
-UNA sola vez y los análisis simultáneos los comparten.
-Sin preguntas:
-    .venv\\Scripts\\python servidor.py --dispositivo gpu --paralelos 3 [--gpu 0]
-    .venv\\Scripts\\python servidor.py --sin-preguntar        (usa "ejecucion" de config.json)
-"""
-
 import argparse
 import atexit
 import base64
@@ -34,18 +21,15 @@ RAIZ = Path(__file__).resolve().parents[2]
 PAGINA = RAIZ / "front" / "static" / "index.html"
 PUERTO = 8300
 
-# Zona encontrada que corresponde a cada campo (para dibujar los recuadros)
 ZONA_DEL_CAMPO = {"micr": "micr", "numero_cheque": "cheque_impreso", "cuenta": "cuenta_impresa",
                   "monto_numeros": "monto_numeros", "monto_letras": "monto_letras",
                   "ciudad": "ciudad_fecha", "fecha": "ciudad_fecha", "beneficiario": "beneficiario"}
 
 config = json.loads((RAIZ / "config.json").read_text(encoding="utf-8"))
-# Se crean en iniciar() (no al importar), después de las preguntas de arranque
-motor = None      # back.motor.paralelo.Motor: modelos cargados una vez, `paralelos` análisis a la vez
+motor = None
 lotes = None
 plan = {}
 app = FastAPI(title="PoC cheques Pichincha")
-
 
 def iniciar(args=None):
     global motor, lotes, plan
@@ -57,9 +41,7 @@ def iniciar(args=None):
     print(f"Listo en {motor.segundos_carga} s ({motor.descripcion})", flush=True)
     lotes = GestorLotes(motor, RAIZ / "resultados")
 
-
 def _imagen_con_zonas(img, detalle, zonas):
-    """Cheque con las zonas encontradas: verde si sus campos se aceptaron, naranja si hay que revisar."""
     vis = cv2.cvtColor(cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC), cv2.COLOR_GRAY2BGR)
     h, w = vis.shape[:2]
     for z, (x0, y0, x1, y1) in zonas.items():
@@ -73,11 +55,9 @@ def _imagen_con_zonas(img, detalle, zonas):
         cv2.rectangle(vis, (int(x0 * w), int(y0 * h)), (int(x1 * w) - 1, int(y1 * h) - 1), color, 2)
     return base64.b64encode(cv2.imencode(".png", vis)[1]).decode()
 
-
 @app.get("/")
 def inicio():
     return FileResponse(PAGINA)
-
 
 @app.get("/api/config")
 def ver_config():
@@ -85,10 +65,8 @@ def ver_config():
             "modelo": motor.modelo, "segundos_carga": motor.segundos_carga,
             "ejecucion": {**plan, "descripcion": motor.descripcion, "en_curso": motor.en_curso}}
 
-
 @app.post("/api/analizar")
 async def analizar(imagen: UploadFile = File(...), seleccion: str = Form("{}")):
-    # Tiempos del servidor fuera del análisis (para comparar de punta a punta con otro sistema)
     t0 = time.perf_counter()
     datos = await imagen.read()
     servidor = {"leer_subida": time.perf_counter() - t0}
@@ -97,7 +75,6 @@ async def analizar(imagen: UploadFile = File(...), seleccion: str = Form("{}")):
     except json.JSONDecodeError:
         raise HTTPException(400, "Selección inválida")
     try:
-        # El análisis bloquea: se corre en un hilo para que el servidor siga atendiendo (avance de lotes, etc.)
         r, img, servidor["espera_cola"] = await run_in_threadpool(motor.analizar, datos, sel)
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -110,19 +87,16 @@ async def analizar(imagen: UploadFile = File(...), seleccion: str = Form("{}")):
     r["archivo"] = imagen.filename
     return r
 
-
 class PedidoLote(BaseModel):
     ruta: str
     subcarpetas: bool = False
     seleccion: dict = {}
-
 
 def _lote(id_lote):
     lote = lotes.lotes.get(id_lote)
     if not lote:
         raise HTTPException(404, "Lote no encontrado (¿se reinició el servidor?)")
     return lote
-
 
 @app.post("/api/lotes")
 def crear_lote(p: PedidoLote):
@@ -132,17 +106,14 @@ def crear_lote(p: PedidoLote):
         raise HTTPException(400, str(e))
     return {"id": lote.id, "total": len(lote.imagenes), "con_verdad": bool(lote.verdad)}
 
-
 @app.get("/api/lotes/{id_lote}")
 def ver_lote(id_lote: str, desde: int = 0):
     return _lote(id_lote).resumen(desde)
-
 
 @app.post("/api/lotes/{id_lote}/cancelar")
 def cancelar_lote(id_lote: str):
     _lote(id_lote).cancelar = True
     return {"ok": True}
-
 
 @app.get("/api/lotes/{id_lote}/excel")
 def excel_lote(id_lote: str):
@@ -150,7 +121,6 @@ def excel_lote(id_lote: str):
     if not lote.excel:
         raise HTTPException(409, "El Excel estará listo cuando termine el lote")
     return FileResponse(lote.excel, filename=lote.excel.name)
-
 
 @app.get("/api/lotes/{id_lote}/imagen/{indice}")
 def imagen_lote(id_lote: str, indice: int):
@@ -160,7 +130,6 @@ def imagen_lote(id_lote: str, indice: int):
     fila = lote.resultados[indice]
     img = preparar_imagen(leer_gris(lote.carpeta / fila["archivo"]))
     return {"imagen_zonas": _imagen_con_zonas(img, fila.get("detalle", {}), fila.get("zonas", {}))}
-
 
 def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -179,7 +148,6 @@ def main(argv=None):
         import webbrowser
         threading.Timer(1.5, webbrowser.open, args=(f"http://127.0.0.1:{PUERTO}",)).start()
     uvicorn.run(app, host="127.0.0.1", port=PUERTO, log_level="warning")
-
 
 if __name__ == "__main__":
     main()

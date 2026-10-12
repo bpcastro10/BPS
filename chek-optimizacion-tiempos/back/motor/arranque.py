@@ -1,19 +1,9 @@
-"""Al levantar el servidor: detecta el equipo, pregunta CPU o GPU y cuántos análisis a la vez, y crea el motor.
-
-Los modelos se cargan UNA sola vez; los análisis simultáneos usan esos mismos modelos (back/motor/paralelo.py).
-
-En paralelismo, un número entre el mínimo y el máximo; Enter (nada escrito) deja el recomendado.
-Sin consola (o con --sin-preguntar) se usan los argumentos de línea de comandos o la sección "ejecucion" de config.json.
-"""
-
 import sys
 
 from back.motor import hardware
 from back.motor.paralelo import Motor, config_de_ejecucion
 
-
 def _preguntar(texto, por_omision, validar):
-    """Pregunta hasta tener una respuesta válida. Enter o sin consola = por_omision."""
     while True:
         try:
             r = input(f"{texto} [Enter = {por_omision}]: ").strip()
@@ -27,7 +17,6 @@ def _preguntar(texto, por_omision, validar):
         except ValueError as e:
             print(f"  Respuesta no válida: {e}")
 
-
 def _entero_entre(minimo, maximo):
     def validar(r):
         try:
@@ -39,9 +28,7 @@ def _entero_entre(minimo, maximo):
         return n
     return validar
 
-
 def _dentro_de_rango(n, rec):
-    """Deja el número pedido dentro del mínimo y el máximo. Fuera de rango, se ajusta y se avisa."""
     n = int(n)
     if rec.minimo <= n <= rec.maximo:
         return n
@@ -49,13 +36,11 @@ def _dentro_de_rango(n, rec):
     print(f"  [AVISO] {n} está fuera del rango permitido ({rec.minimo}-{rec.maximo}); se usa {ajustado}")
     return ajustado
 
-
 def _cpu_o_gpu(r):
     opciones = {"1": "cpu", "2": "gpu", "cpu": "cpu", "gpu": "gpu"}
     if r.lower() not in opciones:
         raise ValueError("escribe 1 (CPU) o 2 (GPU)")
     return opciones[r.lower()]
-
 
 def _una_gpu(disponibles):
     def validar(r):
@@ -64,7 +49,6 @@ def _una_gpu(disponibles):
         return int(r)
     return validar
 
-
 def _mostrar_recomendacion(rec):
     print(f"\n  Paralelismo en {rec.dispositivo.upper()}: entre {rec.minimo} y {rec.maximo} procesos a la vez, "
           f"por defecto {rec.recomendado}")
@@ -72,9 +56,7 @@ def _mostrar_recomendacion(rec):
     for n in rec.notas:
         print(f"   - {n}")
 
-
 def elegir_plan(config, args=None):
-    """Devuelve (equipo, plan). plan = {dispositivo, paralelos, gpu, hilos_torch, precision_gpu, onnx_gpu}."""
     ej = config.get("ejecucion", {})
     args = args or {}
     interactivo = sys.stdin is not None and sys.stdin.isatty() and ej.get("preguntar_al_iniciar", True) \
@@ -87,7 +69,6 @@ def elegir_plan(config, args=None):
     for linea in hardware.describir(equipo):
         print("  " + linea)
 
-    # 1. CPU o GPU
     pedido = args.get("dispositivo") or (None if interactivo else ej.get("dispositivo", "cpu"))
     if not equipo.hay_gpu:
         if pedido == "gpu":
@@ -105,7 +86,6 @@ def elegir_plan(config, args=None):
         print("\n¿Dónde ejecutar los modelos?\n  1) CPU\n  2) GPU (recomendado: GLM-OCR es el 80 % del tiempo)")
         dispositivo = _preguntar("Opción", 2, _cpu_o_gpu)
 
-    # 2. Qué GPU (solo si hay más de una): los modelos se cargan una vez, en UNA GPU
     gpu = None
     if dispositivo == "gpu":
         disponibles = [g.indice for g in equipo.gpus]
@@ -123,7 +103,6 @@ def elegir_plan(config, args=None):
         else:
             gpu = max(equipo.gpus, key=lambda g: g.vram_libre_gb).indice
 
-    # 3. Cuántos análisis a la vez (sobre los mismos modelos)
     rec = hardware.recomendar(equipo, dispositivo, gpu, precision, con_glm)
     _mostrar_recomendacion(rec)
     pedido_n = args.get("paralelos")
@@ -145,7 +124,6 @@ def elegir_plan(config, args=None):
             "onnx_gpu": dispositivo == "gpu" and equipo.onnx_cuda}
     return equipo, plan
 
-
 def describir_plan(plan):
     if plan["dispositivo"] == "gpu":
         donde = f"GPU {plan['gpu']}" + ("" if plan["onnx_gpu"] else " (PaddleOCR en CPU)")
@@ -153,9 +131,7 @@ def describir_plan(plan):
         donde = "CPU"
     return f"{donde} · {plan['paralelos']} a la vez (modelos cargados 1 vez)"
 
-
 def crear_motor(config, raiz, equipo, plan):
-    """Carga los modelos UNA vez; `paralelos` cheques pueden usarlos a la vez (1 = modo original)."""
     descripcion = describir_plan(plan)
     print(f"\n=== Ejecución: {descripcion} ===", flush=True)
     dispositivo = f"cuda:{plan['gpu']}" if plan["dispositivo"] == "gpu" else "cpu"

@@ -1,10 +1,3 @@
-"""Analiza uno o varios cheques y muestra el JSON.
-
-Uso:
-    .venv\\Scripts\\python analizar.py muestras\\pichincha_0001.tif
-    .venv\\Scripts\\python analizar.py muestras\\pichincha_0001.tif --beneficiario --modelo v5_latin
-"""
-
 import argparse
 import json
 import sys
@@ -13,7 +6,6 @@ from pathlib import Path
 from back.motor.analizador import Analizador
 
 RAIZ = Path(__file__).parent
-
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
@@ -36,7 +28,6 @@ def main():
     for img in a.imagenes:
         r = analizador.analizar(img, {"beneficiario": True} if a.beneficiario else None)
         print(json.dumps(r, ensure_ascii=False, indent=2, default=str))
-
 
 if __name__ == "__main__":
     main()

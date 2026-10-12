@@ -1,26 +1,13 @@
-"""Verificación de candidatos sobre la imagen (puntaje CTC).
-
-En lugar de confiar en lo que el OCR "leyó", se pregunta: ¿qué tan probable es que en esta
-zona esté escrito exactamente "cuatrocientos setenta y cinco"? Se calcula con el mejor camino
-(Viterbi) del modelo de reconocimiento, permitiendo texto libre antes y después (etiquetas
-impresas, centavos) pero penalizando la tinta que el candidato no explica. Así, entre
-"setenta" y "noventa" gana el que mejor encaja con los trazos, aunque la lectura libre
-haya salido "ndentay".
-"""
-
 import numpy as np
 
 _ACENTOS = {"a": "áÁ", "e": "éÉ", "i": "íÍ", "o": "óÓ", "u": "úÚüÜ", "n": "ñÑ"}
-# Formas manuscritas de un dígito que el modelo suele leer como letra (cuentan como ese dígito)
 PARECIDOS_DIGITO = {"0": "oOcCDQ°", "1": "lI|i!", "2": "zZ", "4": "A", "5": "sS", "6": "bG", "7": "T",
                     "8": "B", "9": "gq"}
 NEG = -1e9
 import os
-PENALIZACION = float(os.environ.get("PENALIZACION", 2.5))   # costo de cada cuadro con tinta que el candidato no explica
-
+PENALIZACION = float(os.environ.get("PENALIZACION", 2.5))
 
 class Matriz:
-    """Probabilidades de una zona con lo que se reutiliza entre candidatos ya calculado."""
 
     def __init__(self, P):
         self.P = P
@@ -34,7 +21,6 @@ class Matriz:
             self._cache[clave] = np.log(self.P[:, cols].sum(1) + 1e-12) if cols else np.full(len(self.P), NEG)
         return self._cache[clave]
 
-
 class Puntuador:
     def __init__(self, caracteres):
         self.indice = {c: i for i, c in enumerate(caracteres)}
@@ -46,12 +32,6 @@ class Puntuador:
         return sorted(self.indice[v] for v in variantes if v in self.indice)
 
     def puntuar(self, M, texto, como_blanco=" ", digitos_manuscritos=False):
-        """Puntaje de `texto` en la zona M (Matriz). Más alto = más probable.
-
-        - Los espacios del texto se ignoran y los caracteres de `como_blanco` cuentan como vacío.
-        - Los cuadros fuera del texto toman la mejor lectura libre, pero cada cuadro con tinta
-          no explicada resta PENALIZACION.
-        """
         etiquetas = [c for c in texto if c != " "]
         if not etiquetas:
             return NEG
@@ -68,7 +48,7 @@ class Puntuador:
         E[:, 0::2] = blanco[:, None]
         for k, c in enumerate(etiquetas):
             E[:, 2 * k + 1] = M.columnas(self._columnas(c, digitos_manuscritos))
-        salto = np.zeros(S, bool)   # se puede saltar el blanco anterior si la letra cambia
+        salto = np.zeros(S, bool)
         for k in range(1, len(etiquetas)):
             salto[2 * k + 1] = etiquetas[k] != etiquetas[k - 1]
         salto = salto[2:]

@@ -1,16 +1,39 @@
 # Entorno e instalación local
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# GLM-OCR (2,5 GB): lo descarga descargar_modelos.py
+# Editores
+.idea/
+.vscode/
+*.code-workspace
+
+# Modelos que se descargan al instalar (el de firmas ya viene en el repo)
 modelos/GLM-OCR/
 modelos/descarga_glm.log
+modelos/**/*.onnx
+modelos/**/.cache/
+modelos/models--*/blobs/
 
 # Generado al usar la PoC
 resultados/
-servidor.log
+*.log
+*.xlsx
 
-# Muestras excluidas del repo
+# Muestras locales: no son código
 muestras/
 muestras_variaciones/
+muestras_venus/*.jpg
+muestras_venus/*.jpeg
+muestras_venus/*.png
+muestras_venus/*.tif
+muestras_venus/*.tiff
+
+# Sistema
+Thumbs.db
+Desktop.ini
+.DS_Store

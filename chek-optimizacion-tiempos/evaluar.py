@@ -1,16 +1,3 @@
-"""Mide acierto por campo y tiempo por cheque contra las respuestas correctas (verdad.csv).
-
-Uso:
-    .venv\\Scripts\\python evaluar.py                      (muestras\\ con muestras\\verdad.csv)
-    .venv\\Scripts\\python evaluar.py carpeta --modelo v5_latin
-
-Para cada campo cuenta 4 resultados:
-    ok_auto        correcto y aceptado solo            (lo que se ahorra)
-    ok_revisar     correcto pero marcado para revisar  (costo: una revisión)
-    error_revisar  incorrecto y marcado para revisar   (el sistema avisó: no hay daño)
-    error_auto     incorrecto y aceptado solo          (¡el peor caso! debe tender a 0)
-"""
-
 import argparse
 import csv
 import json
@@ -22,7 +9,6 @@ from back.motor.analizador import Analizador
 from back.dominio.comparar import CAMPOS, normalizar_valor as _norm
 
 RAIZ = Path(__file__).parent
-
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
@@ -78,7 +64,6 @@ def main():
 
     salida = guardar_excel_evaluacion(filas, conteo, an.lector.modelo, RAIZ / "resultados")
     print(f"Excel: {salida}")
-
 
 if __name__ == "__main__":
     main()

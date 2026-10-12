@@ -1,5 +1,3 @@
-"""Genera los PNG que muestra FUNCIONAMIENTO.md. La vista previa no dibuja Mermaid."""
-
 import math
 from pathlib import Path
 
@@ -29,11 +27,9 @@ RED = ((253, 236, 234), (180, 35, 24))
 SLATE = ((255, 255, 255), (120, 130, 145))
 BAND = (236, 239, 244)
 
-
 def size(draw, text, font):
     box = draw.multiline_textbbox((0, 0), text, font=font, spacing=3, align="center")
     return box[2] - box[0], box[3] - box[1]
-
 
 def box(draw, rect, text, colors, font=None):
     font = font or BOLD
@@ -44,11 +40,9 @@ def box(draw, rect, text, colors, font=None):
     y = rect[1] + (rect[3] - rect[1] - th) / 2
     draw.multiline_text((x, y), text, font=font, fill=INK, spacing=3, align="center")
 
-
 def band(draw, rect, titulo):
     draw.rounded_rectangle(rect, radius=16, fill=BAND)
     draw.text((rect[0] + 16, rect[1] + 8), titulo, font=SMALLB, fill=MUTED)
-
 
 def arrow(draw, x1, y1, x2, y2, color=LINE):
     draw.line((x1, y1, x2, y2), fill=color, width=3)
@@ -58,21 +52,17 @@ def arrow(draw, x1, y1, x2, y2, color=LINE):
     p2 = (x2 - length * math.cos(ang + spread), y2 - length * math.sin(ang + spread))
     draw.polygon([(x2, y2), p1, p2], fill=color)
 
-
 def down(draw, rect, hasta, color=LINE):
     x = (rect[0] + rect[2]) / 2
     arrow(draw, x, rect[3], x, hasta, color)
-
 
 def right(draw, a, b, color=LINE):
     y = (a[1] + a[3]) / 2
     arrow(draw, a[2], y, b[0] - 2, y, color)
 
-
 def canvas(w, h):
     img = Image.new("RGB", (w, h), BG)
     return img, ImageDraw.Draw(img)
-
 
 def arquitectura():
     img, d = canvas(1100, 1020)
@@ -128,7 +118,6 @@ def arquitectura():
     d.text((36, 964), "lotes.py usa ese Motor y, al terminar, escribe el Excel.", font=SMALL, fill=MUTED)
     img.save(OUT / "arquitectura.png")
 
-
 def flujo():
     img, d = canvas(1180, 1120)
     d.text((36, 20), "Recorrido de un cheque", font=TITLE, fill=INK)
@@ -159,7 +148,6 @@ def flujo():
     d.text((36, 1080), "Hoy el modo es dudosos. La API dibuja las zonas y devuelve el JSON. La imagen no se guarda.", font=SMALL, fill=MUTED)
     img.save(OUT / "flujo-cheque.png")
 
-
 def paralelo():
     img, d = canvas(1200, 720)
     d.text((40, 24), "Paralelización: un juego de modelos, N cheques", font=TITLE, fill=INK)
@@ -185,7 +173,6 @@ def paralelo():
     d.text((40, 640), "N = 1 recorre la carpeta en orden. N > 1 lanza N hilos. El Excel se escribe al final, en el orden de la carpeta.", font=SMALL, fill=INK)
     img.save(OUT / "paralelismo.png")
 
-
 def cambiar_ocr():
     img, d = canvas(1200, 280)
     d.text((40, 20), "Dónde se cambia el OCR", font=TITLE, fill=INK)
@@ -200,7 +187,6 @@ def cambiar_ocr():
     right(d, b, c)
     d.text((40, 240), "El analizador, las reglas, la API y el Excel no se modifican. Después hay que reiniciar.", font=SMALL, fill=MUTED)
     img.save(OUT / "cambiar-ocr.png")
-
 
 def cambiar_modelo():
     img, d = canvas(1200, 320)
@@ -219,7 +205,6 @@ def cambiar_modelo():
     d.text((30, 240), "El analizador pone la etiqueta glm-ocr aunque el modelo sea otro.", font=SMALL, fill=INK)
     d.text((30, 274), "Así las reglas no cambian. lectura_profunda en false apaga el modelo sin borrar pesos. Reiniciar.", font=SMALL, fill=MUTED)
     img.save(OUT / "cambiar-modelo.png")
-
 
 if __name__ == "__main__":
     arquitectura()

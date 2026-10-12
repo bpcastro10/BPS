@@ -103,10 +103,10 @@ Hay un solo proceso. La página pide. La API recibe. El motor ordena los pasos. 
 | `front/static/` | Página. No conoce modelos. |
 | `servidor.py` | Arranque. Delega en `back/api`. |
 | `back/api/` | Recibe la imagen o la ruta, dibuja zonas y devuelve JSON o Excel. |
-| `back/motor/` | Presupuesto de tiempo, hilos y lotes. |
+| `back/motor/` | Presupuesto de tiempo, hilos, lotes y cola en RAM (`memoria.py`). |
 | `back/dominio/` | Decide OK o revisar. No sabe qué OCR ni qué modelo produjo el texto. |
 | `back/ocr/` | Contrato y fábrica del OCR. Hoy `rapidocr` (PP-OCRv6 small y, de segundo, PP-OCRv5 latin). |
-| `back/modelo/` | Contrato y fábrica de la letra manuscrita. Hoy `glm-ocr`. |
+| `back/modelo/` | Fábrica de la letra manuscrita. Hoy `glm-ocr` (`glm_ocr.py`). |
 | `back/informe/` | Excel del lote y Excel de la evaluación. |
 | `externos/firmas/` | Detector de firmas. |
 | `modelos/`, `plantillas/` | Pesos y la referencia MICR. |
@@ -131,7 +131,7 @@ Detalle de esos pasos:
 
 ## Paralelización
 
-Sigue activa. Separar carpetas no cambió `back/motor/paralelo.py` ni `back/motor/lotes.py`.
+Sigue activa. Los modelos se cargan una vez en `back/motor/paralelo.py`. En una carpeta, `back/motor/lotes.py` y `back/motor/memoria.py` adelantan las imágenes en RAM cuando hay más de un cheque a la vez.
 
 ![Un analizador cargado una vez y varios hilos compartiendo los mismos pesos](diagramas/paralelismo.png)
 
@@ -141,8 +141,8 @@ Al levantar se crea un `Analizador`. El OCR, el modelo, el detector de firmas y 
 
 En una carpeta:
 
-- Con 1, los cheques van en orden, de a uno.
-- Con N, N hilos llaman al mismo `Motor`. El Excel se escribe al terminar, en el orden de la carpeta, aunque los hilos acaben desordenados.
+- Con 1, los cheques van en orden, de a uno, leyendo el disco en el momento del análisis.
+- Con N, N hilos llaman al mismo `Motor`. Otro hilo va llenando una cola en RAM con los siguientes cheques ya decodificados (la misma lectura en gris de siempre). La CPU o la GPU reciben la imagen desde memoria y no esperan al disco. La precisión no se toca: no se pasa a float16 ni se cambia el modelo. La cola usa hasta la mitad de la RAM que sobre, con un tope de 2 GB, y suelta cada imagen en cuanto un hilo la toma. El Excel se escribe al terminar, en el orden de la carpeta, aunque los hilos acaben desordenados.
 
 No se duplican los pesos. Cada cheque extra suma memoria de trabajo (cerca de 0,8 GB de RAM y, en GPU, cerca de 0,6 GB de VRAM). El tope que muestra la consola es el menor entre RAM libre, núcleos y VRAM.
 

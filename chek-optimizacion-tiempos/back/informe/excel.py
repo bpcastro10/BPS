@@ -1,8 +1,3 @@
-"""Excel de un lote y de una evaluación. Único lugar que usa openpyxl.
-
-El formato de columnas es el que ya consume la interfaz y los chequeos manuales.
-"""
-
 from datetime import datetime
 from pathlib import Path
 
@@ -13,20 +8,16 @@ from back.dominio.comparar import CAMPOS
 
 COLORES = {"ok_auto": "C6EFCE", "ok_revisar": "FFEB9C", "error_revisar": "F8CBAD", "error_auto": "FF0000"}
 
-
 def guardar_excel_lote(lote, carpeta):
-    """Un libro por lote: hoja Cheques (orden de la carpeta) y hoja Resumen."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Cheques"
-    # Una columna de tiempo por paso, en el orden en que se ejecutan
     pasos = list(dict.fromkeys(p for f in lote.resultados for p in f.get("tiempos_s", {}) if p != "total"))
     cols = ["archivo", "estado", "tiempo_s"] + [f"t_{p}_s" for p in pasos] + ["campos_a_revisar"]
     for c in CAMPOS:
         cols += [c, f"{c}_confianza", f"{c}_revisar"] + ([f"{c}_esperado", f"{c}_resultado"] if lote.verdad else [])
     cols.append("error")
     ws.append(cols)
-    # Con varios análisis simultáneos los resultados llegan desordenados: el Excel sigue el orden de la carpeta
     orden = {str(p.relative_to(lote.carpeta)): i for i, p in enumerate(lote.imagenes)}
     for f in sorted(lote.resultados, key=lambda f: orden.get(f["archivo"], 0)):
         det = f.get("detalle", {})
@@ -70,9 +61,7 @@ def guardar_excel_lote(lote, carpeta):
     wb.save(ruta)
     return ruta
 
-
 def guardar_excel_evaluacion(filas, conteo, modelo, carpeta):
-    """Libro de evaluar.py: una fila por cheque y la hoja Resumen de aciertos."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Cheques"
