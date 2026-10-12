@@ -244,6 +244,99 @@ La forma es `"paquete.modulo:funcion"`.
 
 Si `motor_ocr` no está en `MOTORES`, el arranque se detiene con la lista de motores registrados.
 
+### Ejemplo: poner TrOCR en lugar del lector actual
+
+Este código no está en el proyecto y no está registrado. El OCR que corre hoy sigue siendo RapidOCR. El ejemplo muestra los tres toques si el lector de cada recorte pasara a ser TrOCR (`microsoft/trocr-base-handwritten` o la carpeta local equivalente).
+
+TrOCR lee una línea ya recortada. No busca las cajas del cheque. Por eso el ejemplo deja el localizador de RapidOCR (las zonas no se mueven) y solo cambia el lector. TrOCR devuelve texto. No devuelve la matriz CTC de PP-OCR. Las reglas actuales puntúan los candidatos contra esa matriz. En un cambio real hay que construir una matriz `T x C` alineada con `caracteres`, o las decisiones de OK y revisar dejan de ser las de ahora. La matriz del ejemplo es un relleno para cumplir la firma de la función. No sirve para puntuar.
+
+1. Crear `back/ocr/trocr/componentes.py`:
+
+```python
+"""Ejemplo de adaptador TrOCR. No está registrado en la fábrica."""
+
+import numpy as np
+
+from back.ocr.contrato import ComponentesOcr
+from back.ocr.rapidocr.lector import params_onnx
+from back.ocr.rapidocr.localizador import Localizador
+
+
+class LectorTrOCR:
+    def __init__(self, carpeta, dispositivo):
+        import torch
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        self.modelo = "trocr"
+        self.dispositivo = dispositivo
+        self.torch = torch
+        self.proc = TrOCRProcessor.from_pretrained(carpeta)
+        self.red = VisionEncoderDecoderModel.from_pretrained(carpeta).eval()
+        if dispositivo != "cpu":
+            self.red = self.red.to(dispositivo)
+        # Índice 0 = blanco CTC. Un TrOCR real tiene que usar el alfabeto
+        # con el que se arme la matriz; esta lista solo ilustra la forma.
+        self._caracteres = ["", *"abcdefghijklmnopqrstuvwxyz0123456789$.,/- "]
+
+    @property
+    def caracteres(self):
+        return self._caracteres
+
+    def leer_con_probabilidades(self, imagenes, variantes, con_matriz=()):
+        lecturas, matrices = [], {}
+        for variante in variantes:
+            texto = self._leer_una(imagenes[variante])
+            lecturas.append({"variante": variante, "texto": texto, "confianza": 0.99})
+            if variante in con_matriz:
+                # Relleno de ejemplo, no es la probabilidad de PP-OCR.
+                matrices[variante] = np.full((8, len(self._caracteres)), 1 / len(self._caracteres))
+        return lecturas, matrices
+
+    def _leer_una(self, gris):
+        from PIL import Image
+        imagen = Image.fromarray(gris).convert("RGB")
+        pixeles = self.proc(images=imagen, return_tensors="pt").pixel_values
+        if self.dispositivo != "cpu":
+            pixeles = pixeles.to(self.dispositivo)
+        with self.torch.inference_mode():
+            ids = self.red.generate(pixeles, max_new_tokens=64)
+        return self.proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
+
+
+def crear(config, gpu_onnx):
+    dispositivo = f"cuda:{gpu_onnx}" if gpu_onnx is not None else "cpu"
+    carpeta = config.get("carpeta_ocr", "modelos/trocr-handwritten")
+    onnx = params_onnx(None, gpu_onnx)
+    return ComponentesOcr(
+        lector=LectorTrOCR(carpeta, dispositivo),
+        localizador=Localizador(config.get("modelo_lectura", "v6_small"), config.get("detector", "small"), onnx),
+        lector_secundario=None,
+    )
+
+
+def preparar_descarga(config):
+    print("Ejemplo: aquí se bajarían los pesos de TrOCR a modelos/trocr-handwritten.")
+```
+
+2. Una línea en `MOTORES` de `back/ocr/fabrica.py`:
+
+```python
+MOTORES = {
+    "rapidocr": "back.ocr.rapidocr.componentes:crear_rapidocr",
+    "trocr": "back.ocr.trocr.componentes:crear",
+}
+```
+
+3. En `config.json`, y reiniciar:
+
+```json
+"motor_ocr": "trocr",
+"carpeta_ocr": "modelos/trocr-handwritten",
+"detector": "small",
+"modelo_lectura": "v6_small"
+```
+
+`detector` y `modelo_lectura` siguen siendo del localizador RapidOCR. `carpeta_ocr` es la carpeta de pesos de TrOCR. Para volver al comportamiento actual basta con `"motor_ocr": "rapidocr"`.
+
 ## Cambiar el modelo de letra
 
 Hoy `config.json` tiene `"modelo_profundo": "glm-ocr"` y `"lectura_profunda": true`. El analizador llama a `back/modelo/fabrica.py`. Si `lectura_profunda` es `false`, no carga ningún modelo y el cheque se resuelve solo con el OCR y las reglas.
@@ -319,3 +412,104 @@ MODELOS = {
 Si el módulo no define `descargar`, `descargar_modelos.py` avisa y no baja nada. Si `modelo_profundo` no está en `MODELOS`, el arranque se detiene con la lista de modelos registrados.
 
 La carpeta `carpeta_modelo_profundo` la usa GLM. Un modelo nuevo puede leer esa clave u otra que agregue en `config.json`; la fábrica le pasa el `config` completo a `crear`.
+
+### Ejemplo: cambiar GLM por otro modelo de letra
+
+Este código tampoco está en el proyecto. GLM sigue siendo el modelo activo. El ejemplo es un segundo modelo, llamado `otro-modelo`, que lee cada recorte por su cuenta y devuelve el texto de la zona. El analizador le pone la variante `glm-ocr` antes de llamar a las reglas, así que `back/dominio/` no se toca.
+
+1. Crear `back/modelo/otro_modelo.py`:
+
+```python
+"""Ejemplo de otro modelo de letra. No está registrado en la fábrica."""
+
+from pathlib import Path
+
+
+class LectorOtro:
+    def __init__(self, carpeta, dispositivo, precision):
+        import torch
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+        self.torch = torch
+        self.dispositivo = dispositivo
+        self.gpu = str(dispositivo).startswith("cuda")
+        self.dtype = getattr(torch, precision) if self.gpu else torch.float32
+        self.proc = AutoProcessor.from_pretrained(carpeta)
+        self.red = AutoModelForImageTextToText.from_pretrained(carpeta, dtype=self.dtype).eval()
+        if self.gpu:
+            self.red = self.red.to(dispositivo)
+        self.segundos_por_token = 0.05 if self.gpu else 0.35
+
+    def estimar_segundos(self, n_renglones):
+        return 2.0 + self.segundos_por_token * 12 * n_renglones
+
+    def leer(self, recortes):
+        """recortes: lista de (nombre_de_zona, imagen gris)."""
+        from PIL import Image
+        textos = {}
+        for nombre, gris in recortes:
+            imagen = Image.fromarray(gris).convert("RGB")
+            mensajes = [{"role": "user", "content": [
+                {"type": "image", "image": imagen},
+                {"type": "text", "text": "Text Recognition:"},
+            ]}]
+            entrada = self.proc.apply_chat_template(
+                mensajes, tokenize=True, add_generation_prompt=True,
+                return_dict=True, return_tensors="pt")
+            if self.gpu:
+                entrada = entrada.to(self.dispositivo)
+            with self.torch.inference_mode():
+                salida = self.red.generate(**entrada, max_new_tokens=32, do_sample=False)
+            nuevos = salida[0][entrada["input_ids"].shape[1]:]
+            textos[nombre] = " ".join(self.proc.decode(nuevos, skip_special_tokens=True).split())
+        textos["_texto_completo"] = "\n".join(
+            textos[nombre] for nombre, _ in recortes if nombre in textos)
+        return textos
+
+
+def _carpeta(config, raiz):
+    carpeta = Path(config.get("carpeta_modelo_profundo", "modelos/OTRO-MODELO"))
+    if not carpeta.is_absolute():
+        carpeta = Path(raiz) / carpeta
+    return carpeta
+
+
+def crear(config, raiz, dispositivo, precision):
+    return LectorOtro(str(_carpeta(config, raiz)), dispositivo, precision)
+
+
+def descargar(config, raiz):
+    carpeta = _carpeta(config, raiz)
+    if (carpeta / "model.safetensors").exists():
+        print("Otro modelo ya está descargado.")
+        return
+    print("Ejemplo: aquí se bajarían los pesos a", carpeta)
+```
+
+Ese `leer` no apila las tiras como GLM. El contrato solo pide un texto por zona. Si el modelo nuevo lee mejor con las zonas apiladas en una sola imagen, esa preparación va dentro de `leer`, igual que hoy en `back/modelo/glm_ocr.py`.
+
+2. Una línea en `MODELOS` de `back/modelo/fabrica.py`:
+
+```python
+MODELOS = {
+    "glm-ocr": "back.modelo.glm_ocr:crear",
+    "otro-modelo": "back.modelo.otro_modelo:crear",
+}
+```
+
+3. En `config.json`, y reiniciar:
+
+```json
+"lectura_profunda": true,
+"lectura_profunda_modo": "dudosos",
+"modelo_profundo": "otro-modelo",
+"carpeta_modelo_profundo": "modelos/OTRO-MODELO"
+```
+
+Para volver a GLM:
+
+```json
+"modelo_profundo": "glm-ocr",
+"carpeta_modelo_profundo": "modelos/GLM-OCR"
+```
+
+OCR y modelo se cambian por separado. Se puede dejar RapidOCR y cambiar solo el modelo, o dejar GLM y cambiar solo el lector a TrOCR. El analizador, las reglas y el Excel quedan igual.
